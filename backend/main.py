@@ -2,8 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base
 import models
+from routers import auth
 
-# Tables banao automatically
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="CRM API", version="1.0.0")
@@ -15,6 +15,8 @@ app.add_middleware(
     allow_headers=["*"],
     allow_credentials=True,
 )
+
+app.include_router(auth.router)
 
 @app.get("/")
 def root():
