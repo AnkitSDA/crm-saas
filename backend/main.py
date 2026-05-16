@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base
 from routers import auth, leads, webhooks
 import models
-from routers import auth, leads
 
 Base.metadata.create_all(bind=engine)
 
