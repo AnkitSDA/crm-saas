@@ -10,7 +10,11 @@ app = FastAPI(title="CRM API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+    "http://localhost:3000",
+    "https://crm-saas-lemon.vercel.app",
+    "https://crm-saas-gwlfcab36-ankitsda-projects.vercel.app",
+],
     allow_methods=["*"],
     allow_headers=["*"],
     allow_credentials=True,
