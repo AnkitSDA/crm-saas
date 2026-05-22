@@ -7,8 +7,21 @@ from models import User
 import os
 
 bearer = HTTPBearer()
-SECRET = os.getenv("JWT_SECRET", "crm-saas-secret-key-change-this-later")
-ALGO   = "HS256"
+
+# JWT_SECRET MUST be set in production. A hardcoded fallback is a security hole -
+# anyone with the source can forge tokens. Better to crash on startup than ship insecure.
+SECRET = os.getenv("JWT_SECRET")
+if not SECRET:
+    # Allow a dev fallback only in obvious dev mode
+    if os.getenv("ENV", "production") == "development":
+        SECRET = "dev-only-secret-do-not-use-in-prod"
+    else:
+        raise RuntimeError(
+            "JWT_SECRET environment variable is required. "
+            "Set it on Render dashboard or in your .env file."
+        )
+
+ALGO = "HS256"
 
 def get_current_user(
     creds: HTTPAuthorizationCredentials = Security(bearer),

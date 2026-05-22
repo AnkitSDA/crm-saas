@@ -5,13 +5,21 @@ from jose import jwt
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 from database import get_db
-from models import User, Tenant
+from models import User, Tenant, gen_api_key
+from deps import get_current_user
 import os, uuid
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 pwd    = CryptContext(schemes=["bcrypt"])
-SECRET = os.getenv("JWT_SECRET", "crm-saas-secret-key-change-this-later")
-ALGO   = "HS256"
+
+SECRET = os.getenv("JWT_SECRET")
+if not SECRET:
+    if os.getenv("ENV", "production") == "development":
+        SECRET = "dev-only-secret-do-not-use-in-prod"
+    else:
+        raise RuntimeError("JWT_SECRET environment variable is required.")
+
+ALGO = "HS256"
 
 # Request schemas
 class RegisterRequest(BaseModel):
@@ -34,21 +42,23 @@ def make_token(user: User) -> str:
 
 @router.post("/register")
 def register(data: RegisterRequest, db: Session = Depends(get_db)):
-    # Email already exists?
     if db.query(User).filter(User.email == data.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    # Tenant banao
+    if len(data.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    # Create tenant with auto-generated api_key
     slug = data.business_name.lower().replace(" ", "-") + "-" + str(uuid.uuid4())[:4]
     tenant = Tenant(
         id=str(uuid.uuid4()),
         name=data.business_name,
-        slug=slug
+        slug=slug,
+        api_key=gen_api_key()
     )
     db.add(tenant)
     db.flush()
 
-    # Tenant admin user banao
     user = User(
         id=str(uuid.uuid4()),
         tenant_id=tenant.id,
@@ -60,11 +70,13 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+    db.refresh(tenant)
 
     return {
-        "token": make_token(user),
-        "role":  user.role,
-        "tenant": tenant.slug
+        "token":   make_token(user),
+        "role":    user.role,
+        "tenant":  tenant.slug,
+        "api_key": tenant.api_key,  # Show once on registration; user can also find it in Settings
     }
 
 @router.post("/login")
@@ -79,11 +91,11 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     }
 
 @router.get("/me")
-def me(db: Session = Depends(get_db), user: User = Depends(__import__('deps').get_current_user)):
+def me(user: User = Depends(get_current_user)):
     return {
         "id":        user.id,
         "email":     user.email,
         "full_name": user.full_name,
         "role":      user.role,
-        "tenant_id": user.tenant_id
+        "tenant_id": user.tenant_id,
     }
