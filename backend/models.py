@@ -11,6 +11,34 @@ def gen_api_key():
     # 32-byte url-safe token -> ~43 chars. Prefixed for easy identification.
     return "crm_" + secrets.token_urlsafe(32)
 
+def normalize_phone(phone: str | None) -> str | None:
+    """
+    Normalize an Indian phone number for duplicate detection.
+    Strips spaces, dashes, brackets, +, leading 0, leading 91.
+    Returns the last 10 digits, or None if not a valid phone.
+
+    Examples:
+        "9711110147"      -> "9711110147"
+        "09711110147"     -> "9711110147"
+        "+91 9711 110147" -> "9711110147"
+        "919711110147"    -> "9711110147"
+    """
+    if not phone:
+        return None
+    # Keep only digits
+    digits = "".join(c for c in phone if c.isdigit())
+    # Strip India country code if present
+    if len(digits) > 10 and digits.startswith("91"):
+        digits = digits[2:]
+    # Strip leading zero
+    if len(digits) > 10 and digits.startswith("0"):
+        digits = digits[1:]
+    # Use last 10 digits (handles any remaining prefixes)
+    if len(digits) >= 10:
+        return digits[-10:]
+    return digits if digits else None
+
+
 class Tenant(Base):
     __tablename__ = "tenants"
 
@@ -42,7 +70,7 @@ class Lead(Base):
     name        = Column(String(255))
     phone       = Column(String(50), index=True)
     email       = Column(String(255), index=True)
-    source      = Column(String(100), default="manual")    # high-level: website, google_ads, meta_ads, manual, referral
+    source      = Column(String(100), default="manual")
     status      = Column(String(50), default="new", index=True)
     notes       = Column(Text)
     assigned_to = Column(String(36), nullable=True, index=True)
@@ -53,8 +81,8 @@ class Lead(Base):
     utm_campaign = Column(String(255), nullable=True, index=True)
     utm_term     = Column(String(255), nullable=True)
     utm_content  = Column(String(255), nullable=True)
-    gclid        = Column(String(255), nullable=True, index=True)  # Google click id - critical for offline conversions
-    fbclid       = Column(String(255), nullable=True)              # Meta click id
+    gclid        = Column(String(255), nullable=True, index=True)
+    fbclid       = Column(String(255), nullable=True)
     landing_page = Column(String(500), nullable=True)
     referrer     = Column(String(500), nullable=True)
 

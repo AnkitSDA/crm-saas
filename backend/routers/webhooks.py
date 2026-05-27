@@ -2,22 +2,24 @@ from fastapi import APIRouter, Request, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
+from datetime import datetime, timedelta
 from database import get_db
-from models import Lead, Tenant
+from models import Lead, Tenant, normalize_phone
 import os, uuid
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 META_VERIFY_TOKEN = os.getenv("META_VERIFY_TOKEN", "crm-meta-verify-123")
+DEDUPE_WINDOW_HOURS = 1  # New leads with same phone within this window auto-merge
 
 
 class FormLeadIn(BaseModel):
-    """Payload from WordPress / Contact Form 7 / landing page form."""
+    """Payload from WordPress / Contact Form 7 / Elementor / landing page form."""
     api_key: str
     name:    Optional[str] = None
     phone:   Optional[str] = None
     email:   Optional[str] = None
-    message: Optional[str] = None   # CF7 'your-message' field
+    message: Optional[str] = None
     notes:   Optional[str] = None
 
     # Attribution
@@ -45,7 +47,6 @@ def _resolve_tenant(db: Session, api_key: str) -> Tenant:
 
 
 def _infer_source(payload: FormLeadIn) -> str:
-    """Decide the high-level source bucket from UTM/click-id signals."""
     if payload.gclid or (payload.utm_source and payload.utm_source.lower() == "google"):
         return "google_ads"
     if payload.fbclid or (payload.utm_source and payload.utm_source.lower() in ("facebook", "instagram", "meta")):
@@ -55,15 +56,47 @@ def _infer_source(payload: FormLeadIn) -> str:
     return "website"
 
 
+def _auto_dedupe(db: Session, new_lead: Lead) -> int:
+    """
+    After inserting a new lead, delete any older leads for the same tenant
+    with the same normalized phone within DEDUPE_WINDOW_HOURS.
+    Keeps the new (just-inserted) lead. Returns count of deletions.
+    """
+    if not new_lead.phone:
+        return 0
+
+    normalized_new = normalize_phone(new_lead.phone)
+    if not normalized_new:
+        return 0
+
+    cutoff = datetime.utcnow() - timedelta(hours=DEDUPE_WINDOW_HOURS)
+
+    # Get candidates: other leads in the same tenant within window with non-null phone
+    candidates = db.query(Lead).filter(
+        Lead.tenant_id == new_lead.tenant_id,
+        Lead.id != new_lead.id,
+        Lead.created_at >= cutoff,
+        Lead.phone.isnot(None),
+    ).all()
+
+    deleted = 0
+    for old in candidates:
+        if normalize_phone(old.phone) == normalized_new:
+            db.delete(old)
+            deleted += 1
+
+    if deleted:
+        db.commit()
+    return deleted
+
+
 @router.post("/form")
 async def receive_form(payload: FormLeadIn, db: Session = Depends(get_db)):
     """
     Public endpoint for landing page forms. Authenticated by per-tenant api_key.
-    The api_key is shown to the tenant admin on the Settings page.
     """
     tenant = _resolve_tenant(db, payload.api_key)
 
-    # Truncate long URLs defensively
     landing = (payload.landing_page or "")[:500] or None
     referrer = (payload.referrer or "")[:500] or None
 
@@ -89,7 +122,15 @@ async def receive_form(payload: FormLeadIn, db: Session = Depends(get_db)):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    return {"status": "received", "lead_id": lead.id}
+
+    # Auto-merge: delete older duplicates with same phone (last 1 hour)
+    merged_count = _auto_dedupe(db, lead)
+
+    return {
+        "status": "received",
+        "lead_id": lead.id,
+        "merged_duplicates": merged_count,
+    }
 
 
 # ---------- Meta (Facebook) Lead Ads ----------
@@ -106,12 +147,5 @@ async def verify_meta_webhook(request: Request):
 
 @router.post("/meta")
 async def receive_meta_lead(request: Request, db: Session = Depends(get_db)):
-    """
-    Placeholder. To wire this up properly:
-      1. Verify X-Hub-Signature-256 header against app secret
-      2. Call Graph API GET /{leadgen_id} with page access token to fetch field_data
-      3. Match page_id -> tenant_id (add a TenantFbPage table)
-      4. Insert Lead with source='meta_ads'
-    """
     data = await request.json()
     return {"status": "received_unhandled", "raw_keys": list(data.keys())}

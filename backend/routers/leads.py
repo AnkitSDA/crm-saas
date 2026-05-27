@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timedelta
 from database import get_db
-from models import Lead
+from models import Lead, normalize_phone
 from deps import get_current_tenant
 import uuid
 
@@ -21,8 +21,6 @@ class LeadCreate(BaseModel):
 
 
 class LeadUpdate(BaseModel):
-    # Using None as sentinel; "clearing" still impossible for notes/assigned_to
-    # but acceptable for now. Empty string explicitly clears.
     status:      Optional[str] = None
     notes:       Optional[str] = None
     assigned_to: Optional[str] = None
@@ -34,9 +32,9 @@ def get_leads(
     db:        Session           = Depends(get_db),
     status:    Optional[str]     = Query(None),
     source:    Optional[str]     = Query(None),
-    search:    Optional[str]     = Query(None, description="Search in name/phone/email"),
-    campaign:  Optional[str]     = Query(None, description="Filter by utm_campaign"),
-    days:      Optional[int]     = Query(None, ge=1, le=365, description="Only leads from last N days"),
+    search:    Optional[str]     = Query(None),
+    campaign:  Optional[str]     = Query(None),
+    days:      Optional[int]     = Query(None, ge=1, le=365),
     limit:     int               = Query(100, ge=1, le=500),
     offset:    int               = Query(0,  ge=0),
 ):
@@ -83,7 +81,6 @@ def source_breakdown(
     db:        Session       = Depends(get_db),
     days:      int           = Query(30, ge=1, le=365),
 ):
-    """For dashboard chart: lead count grouped by source over last N days."""
     cutoff = datetime.utcnow() - timedelta(days=days)
     rows = (
         db.query(Lead.source, func.count(Lead.id))
@@ -101,7 +98,6 @@ def campaign_breakdown(
     db:        Session = Depends(get_db),
     days:      int     = Query(30, ge=1, le=365),
 ):
-    """Performance per Google Ads campaign. Won leads = conversions."""
     cutoff = datetime.utcnow() - timedelta(days=days)
     rows = (
         db.query(
@@ -130,7 +126,6 @@ def daily_counts(
     db:        Session = Depends(get_db),
     days:      int     = Query(14, ge=1, le=90),
 ):
-    """Daily lead count for trend chart."""
     cutoff = datetime.utcnow() - timedelta(days=days)
     rows = (
         db.query(func.date(Lead.created_at).label("d"), func.count(Lead.id))
@@ -140,6 +135,42 @@ def daily_counts(
           .all()
     )
     return [{"date": str(d), "count": c} for d, c in rows]
+
+
+@router.post("/cleanup/duplicates")
+def cleanup_duplicates(
+    tenant_id: str     = Depends(get_current_tenant),
+    db:        Session = Depends(get_db),
+):
+    """
+    Scan all leads for this tenant. For each phone (normalized), keep the
+    newest lead, delete the older duplicates. Returns count of deletions.
+    """
+    leads = (
+        db.query(Lead)
+        .filter(Lead.tenant_id == tenant_id, Lead.phone.isnot(None))
+        .order_by(Lead.created_at.desc())
+        .all()
+    )
+
+    seen_phones: set[str] = set()
+    deleted = 0
+
+    for lead in leads:
+        normalized = normalize_phone(lead.phone)
+        if not normalized:
+            continue
+        if normalized in seen_phones:
+            # Older lead with phone already seen with newer entry - delete
+            db.delete(lead)
+            deleted += 1
+        else:
+            seen_phones.add(normalized)
+
+    if deleted:
+        db.commit()
+
+    return {"deleted": deleted, "kept": len(seen_phones)}
 
 
 @router.get("/{lead_id}")
@@ -171,7 +202,6 @@ def update_lead(
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
-    # exclude_unset distinguishes "not provided" from "set to empty string/null"
     updates = data.model_dump(exclude_unset=True)
     for field, value in updates.items():
         setattr(lead, field, value)
