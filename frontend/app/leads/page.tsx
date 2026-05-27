@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,12 +28,36 @@ interface Lead {
   created_at: string;
 }
 
+// Parse notes like "Form: X Message: Y City: Z" into structured fields.
+// Handles both newline-separated and space-separated formats.
+function parseNotes(notes: string | null): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!notes) return result;
+
+  const text = notes.replace(/\s+/g, " ").trim();
+  const knownKeys = ["Form", "Message", "Quantity", "Requirement", "City"];
+  const keyAlt = knownKeys.join("|");
+  const regex = new RegExp(
+    `(${keyAlt})\\s*:\\s*(.+?)(?=\\s+(?:${keyAlt})\\s*:|$)`,
+    "gi"
+  );
+
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    const key = match[1].toLowerCase();
+    const value = match[2].trim();
+    result[key] = value;
+  }
+  return result;
+}
+
 export default function LeadsPage() {
   const router = useRouter();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: "",
     phone: "",
@@ -55,7 +79,6 @@ export default function LeadsPage() {
     fetchLeads();
   }, []);
 
-  // Refetch when filters change (debounced for search)
   useEffect(() => {
     const id = setTimeout(fetchLeads, search ? 350 : 0);
     return () => clearTimeout(id);
@@ -106,21 +129,30 @@ export default function LeadsPage() {
         "Name",
         "Phone",
         "Email",
+        "City",
+        "Quantity",
         "Source",
         "UTM Campaign",
         "Status",
+        "Form",
         "Notes",
       ],
-      ...leads.map((l) => [
-        new Date(l.created_at).toLocaleString(),
-        l.name || "",
-        l.phone || "",
-        l.email || "",
-        l.source,
-        l.utm_campaign || "",
-        l.status,
-        (l.notes || "").replace(/\n/g, " "),
-      ]),
+      ...leads.map((l) => {
+        const p = parseNotes(l.notes);
+        return [
+          new Date(l.created_at).toLocaleString(),
+          l.name || "",
+          l.phone || "",
+          l.email || "",
+          p.city || "",
+          p.quantity || p.message || p.requirement || "",
+          l.source,
+          l.utm_campaign || "",
+          l.status,
+          p.form || "",
+          (l.notes || "").replace(/\n/g, " | "),
+        ];
+      }),
     ];
     const csv = rows
       .map((r) =>
@@ -134,6 +166,13 @@ export default function LeadsPage() {
     a.download = `leads-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function waLink(phone: string | null) {
+    if (!phone) return "#";
+    // Take only digits, strip leading 91 if present, then prefix 91 for India
+    const digits = phone.replace(/\D/g, "").replace(/^91/, "");
+    return `https://wa.me/91${digits.slice(-10)}`;
   }
 
   if (loading)
@@ -213,7 +252,7 @@ export default function LeadsPage() {
         </div>
 
         <p className="text-gray-500 text-sm mb-3">
-          Showing {leads.length} of {total} leads
+          Showing {leads.length} of {total} leads · Click any row for full details
         </p>
 
         {showForm && (
@@ -249,89 +288,174 @@ export default function LeadsPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">
-                  Date
-                </th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">
-                  Name
-                </th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">
-                  Phone
-                </th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">
-                  Email
-                </th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">
-                  Source
-                </th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">
-                  Campaign
-                </th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">
-                  Status
-                </th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">
-                  Action
-                </th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Date</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Phone</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">City</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Quantity</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Source</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Campaign</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Action</th>
               </tr>
             </thead>
             <tbody>
               {leads.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={8}
-                    className="text-center py-8 text-gray-400"
-                  >
+                  <td colSpan={10} className="text-center py-8 text-gray-400">
                     No leads match these filters
                   </td>
                 </tr>
               )}
-              {leads.map((lead) => (
-                <tr key={lead.id} className="border-b hover:bg-gray-50">
-                  <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
-                    {new Date(lead.created_at).toLocaleDateString()}
-                  </td>
-                  <td className="px-4 py-3 font-medium">
-                    {lead.name || "-"}
-                    {lead.gclid && (
-                      <span
-                        className="ml-2 inline-block bg-emerald-50 text-emerald-700 text-[10px] px-1.5 py-0.5 rounded"
-                        title="Came from a Google Ads click"
-                      >
-                        gclid
-                      </span>
+              {leads.map((lead) => {
+                const parsed = parseNotes(lead.notes);
+                const quantity = parsed.quantity || parsed.message || parsed.requirement || "";
+                const isExpanded = expandedRow === lead.id;
+                return (
+                  <Fragment key={lead.id}>
+                    <tr
+                      className={`border-b hover:bg-gray-50 cursor-pointer ${isExpanded ? "bg-blue-50/40" : ""}`}
+                      onClick={() => setExpandedRow(isExpanded ? null : lead.id)}
+                    >
+                      <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                        {new Date(lead.created_at).toLocaleDateString()}
+                        <div className="text-[10px] text-gray-400">
+                          {new Date(lead.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-medium">
+                        {lead.name || "-"}
+                        {lead.gclid && (
+                          <span
+                            className="ml-2 inline-block bg-emerald-50 text-emerald-700 text-[10px] px-1.5 py-0.5 rounded"
+                            title="Came from a Google Ads click"
+                          >
+                            gclid
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {lead.phone ? (
+                          <a
+                            href={`tel:${lead.phone}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-blue-600 hover:underline"
+                          >
+                            {lead.phone}
+                          </a>
+                        ) : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-700 max-w-[180px] truncate" title={lead.email || ""}>
+                        {lead.email || "-"}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">{parsed.city || "-"}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-xs">
+                        {quantity ? (
+                          <span className="bg-amber-50 text-amber-800 px-2 py-0.5 rounded font-medium">
+                            {quantity}
+                          </span>
+                        ) : "-"}
+                      </td>
+                      <td className="px-4 py-3 capitalize text-xs whitespace-nowrap">
+                        {lead.source.replace("_", " ")}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-600 max-w-[140px] truncate" title={lead.utm_campaign || ""}>
+                        {lead.utm_campaign || "-"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusColors[lead.status] || "bg-gray-100 text-gray-700"}`}
+                        >
+                          {lead.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <select
+                          className="text-xs border rounded px-2 py-1"
+                          value={lead.status}
+                          onChange={(e) => updateStatus(lead.id, e.target.value)}
+                        >
+                          <option value="new">New</option>
+                          <option value="contacted">Contacted</option>
+                          <option value="qualified">Qualified</option>
+                          <option value="won">Won</option>
+                          <option value="lost">Lost</option>
+                        </select>
+                      </td>
+                    </tr>
+
+                    {/* Expanded detail row */}
+                    {isExpanded && (
+                      <tr className="bg-blue-50/30 border-b">
+                        <td colSpan={10} className="px-6 py-4">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                            <div>
+                              <div className="text-gray-500 mb-0.5">Submitted</div>
+                              <div className="font-medium">{new Date(lead.created_at).toLocaleString()}</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500 mb-0.5">Form</div>
+                              <div className="font-medium">{parsed.form || "-"}</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500 mb-0.5">UTM Source</div>
+                              <div className="font-medium">{lead.utm_source || "-"}</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500 mb-0.5">UTM Campaign</div>
+                              <div className="font-medium">{lead.utm_campaign || "-"}</div>
+                            </div>
+                            <div className="col-span-2">
+                              <div className="text-gray-500 mb-0.5">GCLID</div>
+                              <div className="font-mono text-[10px] truncate" title={lead.gclid || ""}>
+                                {lead.gclid || "-"}
+                              </div>
+                            </div>
+                            <div className="md:col-span-4">
+                              <div className="text-gray-500 mb-0.5">Notes (raw)</div>
+                              <div className="font-medium whitespace-pre-line bg-white border rounded p-2">
+                                {lead.notes || "-"}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-3 flex gap-2 flex-wrap">
+                            {lead.phone && (
+                              <a
+                                href={`tel:${lead.phone}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700"
+                              >
+                                📞 Call {lead.phone}
+                              </a>
+                            )}
+                            {lead.phone && (
+                              <a
+                                href={waLink(lead.phone)}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-xs bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700"
+                              >
+                                💬 WhatsApp
+                              </a>
+                            )}
+                            {lead.email && (
+                              <a
+                                href={`mailto:${lead.email}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-xs bg-gray-600 text-white px-3 py-1.5 rounded hover:bg-gray-700"
+                              >
+                                ✉️ Email
+                              </a>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                  <td className="px-4 py-3">{lead.phone || "-"}</td>
-                  <td className="px-4 py-3">{lead.email || "-"}</td>
-                  <td className="px-4 py-3 capitalize text-xs">
-                    {lead.source.replace("_", " ")}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-600 max-w-[180px] truncate">
-                    {lead.utm_campaign || "-"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[lead.status] || "bg-gray-100 text-gray-700"}`}
-                    >
-                      {lead.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <select
-                      className="text-xs border rounded px-2 py-1"
-                      value={lead.status}
-                      onChange={(e) => updateStatus(lead.id, e.target.value)}
-                    >
-                      <option value="new">New</option>
-                      <option value="contacted">Contacted</option>
-                      <option value="qualified">Qualified</option>
-                      <option value="won">Won</option>
-                      <option value="lost">Lost</option>
-                    </select>
-                  </td>
-                </tr>
-              ))}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
