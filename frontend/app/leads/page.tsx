@@ -26,20 +26,34 @@ interface Lead {
   utm_campaign: string | null;
   gclid: string | null;
   fbclid?: string | null;
+  follow_up_at?: string | null;
   created_at: string;
 }
 
-// Parse "Form: X Message: Y City: Z" notes into structured fields.
+interface Activity {
+  id: string;
+  note: string;
+  activity_type: string;
+  created_by: string | null;
+  created_at: string | null;
+}
+
+interface Reminder {
+  id: string;
+  name: string | null;
+  phone: string | null;
+  follow_up_at: string | null;
+  status: string;
+  overdue: boolean;
+}
+
 function parseNotes(notes: string | null): Record<string, string> {
   const result: Record<string, string> = {};
   if (!notes) return result;
   const text = notes.replace(/\s+/g, " ").trim();
   const knownKeys = ["Form", "Message", "Quantity", "Requirement", "City"];
   const keyAlt = knownKeys.join("|");
-  const regex = new RegExp(
-    `(${keyAlt})\\s*:\\s*(.+?)(?=\\s+(?:${keyAlt})\\s*:|$)`,
-    "gi"
-  );
+  const regex = new RegExp(`(${keyAlt})\\s*:\\s*(.+?)(?=\\s+(?:${keyAlt})\\s*:|$)`, "gi");
   let match: RegExpExecArray | null;
   while ((match = regex.exec(text)) !== null) {
     result[match[1].toLowerCase()] = match[2].trim();
@@ -47,7 +61,6 @@ function parseNotes(notes: string | null): Record<string, string> {
   return result;
 }
 
-// Normalize phone for client-side duplicate detection (matches backend logic)
 function normalizePhone(phone: string | null): string | null {
   if (!phone) return null;
   let digits = phone.replace(/\D/g, "");
@@ -65,19 +78,35 @@ const SOURCE_TABS = [
   { id: "manual",     label: "Manual",      emoji: "✍️" },
 ];
 
+// Format an ISO datetime for the datetime-local input (local time, no seconds)
+function toLocalInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export default function LeadsPage() {
   const router = useRouter();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [total, setTotal] = useState(0);
   const [sourceCounts, setSourceCounts] = useState<Record<string, number>>({});
   const [allTimeTotal, setAllTimeTotal] = useState(0);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [showReminders, setShowReminders] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", phone: "", email: "", notes: "" });
 
-  // Filters
+  // Per-expanded-lead state
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [newNote, setNewNote] = useState("");
+  const [followUpInput, setFollowUpInput] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
@@ -90,6 +119,7 @@ export default function LeadsPage() {
     }
     fetchLeads();
     fetchSourceCounts();
+    fetchReminders();
   }, []);
 
   useEffect(() => {
@@ -124,9 +154,35 @@ export default function LeadsPage() {
       });
       setSourceCounts(counts);
       setAllTimeTotal(totalCount);
+    } catch {}
+  }
+
+  async function fetchReminders() {
+    try {
+      const res = await api.get("/leads/reminders/list");
+      setReminders(res.data.items || []);
+    } catch {}
+  }
+
+  async function fetchActivities(leadId: string) {
+    try {
+      const res = await api.get(`/leads/${leadId}/activities`);
+      setActivities(res.data || []);
     } catch {
-      // silent
+      setActivities([]);
     }
+  }
+
+  function openRow(lead: Lead) {
+    const isOpen = expandedRow === lead.id;
+    if (isOpen) {
+      setExpandedRow(null);
+      return;
+    }
+    setExpandedRow(lead.id);
+    setNewNote("");
+    setFollowUpInput(toLocalInput(lead.follow_up_at));
+    fetchActivities(lead.id);
   }
 
   async function createLead() {
@@ -146,8 +202,36 @@ export default function LeadsPage() {
     try {
       await api.patch(`/leads/${id}`, { status });
       fetchLeads();
+      fetchReminders();
     } catch {
       toast.error("Update failed");
+    }
+  }
+
+  async function saveFollowUp(leadId: string) {
+    try {
+      const iso = followUpInput ? new Date(followUpInput).toISOString() : null;
+      await api.patch(`/leads/${leadId}`, { follow_up_at: iso });
+      toast.success(iso ? "Reminder set" : "Reminder cleared");
+      fetchLeads();
+      fetchReminders();
+    } catch {
+      toast.error("Could not save reminder");
+    }
+  }
+
+  async function addNote(leadId: string) {
+    if (!newNote.trim()) return;
+    setSavingNote(true);
+    try {
+      await api.post(`/leads/${leadId}/activities`, { note: newNote.trim(), activity_type: "note" });
+      setNewNote("");
+      fetchActivities(leadId);
+      toast.success("Note added");
+    } catch {
+      toast.error("Could not add note");
+    } finally {
+      setSavingNote(false);
     }
   }
 
@@ -161,6 +245,7 @@ export default function LeadsPage() {
       setExpandedRow(null);
       fetchLeads();
       fetchSourceCounts();
+      fetchReminders();
     } catch {
       toast.error("Delete failed");
     } finally {
@@ -168,7 +253,6 @@ export default function LeadsPage() {
     }
   }
 
-  // Find leads with duplicate phones in the current visible set
   function buildDuplicateMap(): Set<string> {
     const phoneToCount: Record<string, number> = {};
     leads.forEach((l) => {
@@ -185,20 +269,15 @@ export default function LeadsPage() {
 
   function exportCsv() {
     const rows = [
-      ["Date", "Name", "Phone", "Email", "City", "Quantity", "Source", "UTM Campaign", "Status", "Form", "Notes"],
+      ["Date", "Name", "Phone", "Email", "City", "Quantity", "Source", "UTM Campaign", "Status", "Follow-up", "Notes"],
       ...leads.map((l) => {
         const p = parseNotes(l.notes);
         return [
           new Date(l.created_at).toLocaleString(),
-          l.name || "",
-          l.phone || "",
-          l.email || "",
-          p.city || "",
-          p.quantity || p.message || p.requirement || "",
-          l.source,
-          l.utm_campaign || "",
-          l.status,
-          p.form || "",
+          l.name || "", l.phone || "", l.email || "",
+          p.city || "", p.quantity || p.message || p.requirement || "",
+          l.source, l.utm_campaign || "", l.status,
+          l.follow_up_at ? new Date(l.follow_up_at).toLocaleString() : "",
           (l.notes || "").replace(/\n/g, " | "),
         ];
       }),
@@ -230,12 +309,29 @@ export default function LeadsPage() {
     return "bg-white text-gray-700 border-gray-200 hover:border-gray-400 hover:bg-gray-50";
   }
 
+  // Follow-up badge for a lead row
+  function followUpBadge(lead: Lead) {
+    if (!lead.follow_up_at) return null;
+    if (lead.status === "won" || lead.status === "lost") return null;
+    const due = new Date(lead.follow_up_at);
+    const now = new Date();
+    const isOverdue = due < now;
+    const isToday = due.toDateString() === now.toDateString();
+    let cls = "bg-gray-100 text-gray-600";
+    let label = "⏰ " + due.toLocaleDateString();
+    if (isOverdue) { cls = "bg-red-100 text-red-700"; label = "⏰ Overdue"; }
+    else if (isToday) { cls = "bg-amber-100 text-amber-800"; label = "⏰ Today"; }
+    return <span className={`ml-2 inline-block text-[10px] px-1.5 py-0.5 rounded ${cls}`}>{label}</span>;
+  }
+
+  const overdueCount = reminders.filter((r) => r.overdue).length;
+  const todayCount = reminders.filter((r) => {
+    if (!r.follow_up_at || r.overdue) return false;
+    return new Date(r.follow_up_at).toDateString() === new Date().toDateString();
+  }).length;
+
   if (loading)
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        Loading...
-      </div>
-    );
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
 
   const duplicateIds = buildDuplicateMap();
 
@@ -244,21 +340,80 @@ export default function LeadsPage() {
       <div className="bg-white border-b px-6 py-4 flex justify-between items-center">
         <h1 className="text-xl font-semibold">Leads</h1>
         <div className="flex gap-4 items-center">
+          {/* Reminder bell */}
+          <button
+            onClick={() => setShowReminders((v) => !v)}
+            className="relative text-gray-600 hover:text-gray-900"
+            title="Follow-up reminders"
+          >
+            🔔
+            {reminders.length > 0 && (
+              <span className={`absolute -top-2 -right-2 text-[10px] text-white rounded-full px-1.5 py-0.5 ${overdueCount > 0 ? "bg-red-600" : "bg-amber-500"}`}>
+                {reminders.length}
+              </span>
+            )}
+          </button>
           <button onClick={() => router.push("/dashboard")} className="text-sm text-blue-600 hover:underline">Dashboard</button>
           <button onClick={() => router.push("/settings")} className="text-sm text-blue-600 hover:underline">Settings</button>
-          <button
-            onClick={() => {
-              localStorage.clear();
-              router.push("/login");
-            }}
-            className="text-sm text-red-500 hover:underline"
-          >
-            Logout
-          </button>
+          <button onClick={() => { localStorage.clear(); router.push("/login"); }} className="text-sm text-red-500 hover:underline">Logout</button>
         </div>
       </div>
 
       <div className="p-6">
+        {/* Reminders banner */}
+        {(overdueCount > 0 || todayCount > 0) && (
+          <div
+            className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 cursor-pointer"
+            onClick={() => setShowReminders((v) => !v)}
+          >
+            <span className="text-sm text-amber-900 font-medium">
+              ⏰ {overdueCount > 0 && <span className="text-red-700">{overdueCount} overdue</span>}
+              {overdueCount > 0 && todayCount > 0 && " · "}
+              {todayCount > 0 && <span>{todayCount} due today</span>}
+              {" "}— click to view follow-ups
+            </span>
+          </div>
+        )}
+
+        {/* Reminders panel */}
+        {showReminders && (
+          <div className="mb-4 rounded-lg border bg-white p-4">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="font-semibold text-sm">Pending Follow-ups ({reminders.length})</h3>
+              <button onClick={() => setShowReminders(false)} className="text-xs text-gray-500 hover:underline">Close</button>
+            </div>
+            {reminders.length === 0 ? (
+              <p className="text-sm text-gray-400 py-2">No follow-ups scheduled. Set one from any lead's detail view.</p>
+            ) : (
+              <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                {reminders.map((r) => {
+                  const due = r.follow_up_at ? new Date(r.follow_up_at) : null;
+                  return (
+                    <div
+                      key={r.id}
+                      className={`flex items-center justify-between text-sm px-3 py-2 rounded ${r.overdue ? "bg-red-50" : "bg-gray-50"}`}
+                    >
+                      <div>
+                        <span className="font-medium">{r.name || "Unknown"}</span>
+                        <span className="text-gray-500 ml-2">{r.phone}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-xs ${r.overdue ? "text-red-700 font-medium" : "text-gray-600"}`}>
+                          {due ? due.toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}
+                          {r.overdue && " (overdue)"}
+                        </span>
+                        {r.phone && (
+                          <a href={`tel:${r.phone}`} onClick={(e) => e.stopPropagation()} className="text-xs bg-blue-600 text-white px-2 py-1 rounded">📞</a>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Source Tabs */}
         <div className="flex flex-wrap gap-2 mb-4">
           {SOURCE_TABS.map((tab) => (
@@ -269,11 +424,7 @@ export default function LeadsPage() {
             >
               <span>{tab.emoji}</span>
               <span>{tab.label}</span>
-              <span
-                className={`inline-flex items-center justify-center min-w-[24px] px-1.5 py-0.5 rounded-full text-xs font-semibold ${
-                  sourceFilter === tab.id ? "bg-white/20 text-white" : "bg-gray-100 text-gray-600"
-                }`}
-              >
+              <span className={`inline-flex items-center justify-center min-w-[24px] px-1.5 py-0.5 rounded-full text-xs font-semibold ${sourceFilter === tab.id ? "bg-white/20 text-white" : "bg-gray-100 text-gray-600"}`}>
                 {getTabCount(tab.id)}
               </span>
             </button>
@@ -282,17 +433,8 @@ export default function LeadsPage() {
 
         {/* Filter bar */}
         <div className="bg-white border rounded-lg p-3 mb-4 flex flex-wrap gap-2 items-center">
-          <Input
-            placeholder="Search name, phone, email..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="max-w-xs"
-          />
-          <select
-            className="border rounded-md px-3 py-2 text-sm bg-white"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
+          <Input placeholder="Search name, phone, email..." value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
+          <select className="border rounded-md px-3 py-2 text-sm bg-white" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="">All statuses</option>
             <option value="new">New</option>
             <option value="contacted">Contacted</option>
@@ -308,16 +450,8 @@ export default function LeadsPage() {
 
         <p className="text-gray-500 text-sm mb-3">
           Showing {leads.length} of {total} leads
-          {sourceFilter ? (
-            <span className="ml-2 text-gray-700 font-medium">
-              · Filtered by {SOURCE_TABS.find((t) => t.id === sourceFilter)?.label}
-            </span>
-          ) : null}
-          {duplicateIds.size > 0 && (
-            <span className="ml-2 text-amber-700">
-              · ⚠️ {duplicateIds.size} possible duplicate{duplicateIds.size > 1 ? "s" : ""} (same phone) — clean up in Settings
-            </span>
-          )}
+          {sourceFilter ? <span className="ml-2 text-gray-700 font-medium">· {SOURCE_TABS.find((t) => t.id === sourceFilter)?.label}</span> : null}
+          {duplicateIds.size > 0 && <span className="ml-2 text-amber-700">· ⚠️ {duplicateIds.size} possible duplicate{duplicateIds.size > 1 ? "s" : ""}</span>}
         </p>
 
         {showForm && (
@@ -342,29 +476,15 @@ export default function LeadsPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">City</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Quantity</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Source</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Campaign</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Action</th>
               </tr>
             </thead>
             <tbody>
               {leads.length === 0 && (
-                <tr>
-                  <td colSpan={10} className="text-center py-12 text-gray-400">
-                    {sourceFilter === "meta_ads" ? (
-                      <div>
-                        <div className="text-base mb-2">No Meta Ads leads yet</div>
-                        <div className="text-xs max-w-md mx-auto">
-                          Set up URL parameters in Facebook Ads Manager: add{" "}
-                          <code className="bg-gray-100 px-1 rounded">utm_source=facebook</code>{" "}
-                          to your ads. Leads will appear here automatically.
-                        </div>
-                      </div>
-                    ) : (
-                      "No leads match these filters"
-                    )}
-                  </td>
-                </tr>
+                <tr><td colSpan={9} className="text-center py-12 text-gray-400">
+                  {sourceFilter === "meta_ads" ? "No Meta Ads leads yet" : "No leads match these filters"}
+                </td></tr>
               )}
               {leads.map((lead) => {
                 const parsed = parseNotes(lead.notes);
@@ -375,59 +495,29 @@ export default function LeadsPage() {
                   <Fragment key={lead.id}>
                     <tr
                       className={`border-b hover:bg-gray-50 cursor-pointer ${isExpanded ? "bg-blue-50/40" : ""} ${isDuplicate ? "bg-amber-50/30" : ""}`}
-                      onClick={() => setExpandedRow(isExpanded ? null : lead.id)}
+                      onClick={() => openRow(lead)}
                     >
                       <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
                         {new Date(lead.created_at).toLocaleDateString()}
-                        <div className="text-[10px] text-gray-400">
-                          {new Date(lead.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </div>
+                        <div className="text-[10px] text-gray-400">{new Date(lead.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
                       </td>
                       <td className="px-4 py-3 font-medium">
                         {lead.name || "-"}
-                        {lead.gclid && (
-                          <span className="ml-2 inline-block bg-emerald-50 text-emerald-700 text-[10px] px-1.5 py-0.5 rounded" title="Google Ads click">
-                            gclid
-                          </span>
-                        )}
-                        {lead.fbclid && (
-                          <span className="ml-2 inline-block bg-blue-50 text-blue-700 text-[10px] px-1.5 py-0.5 rounded" title="Meta Ads click">
-                            fbclid
-                          </span>
-                        )}
-                        {isDuplicate && (
-                          <span className="ml-2 inline-block bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 rounded" title="Another lead with the same phone exists">
-                            duplicate
-                          </span>
-                        )}
+                        {lead.gclid && <span className="ml-2 inline-block bg-emerald-50 text-emerald-700 text-[10px] px-1.5 py-0.5 rounded">gclid</span>}
+                        {lead.fbclid && <span className="ml-2 inline-block bg-blue-50 text-blue-700 text-[10px] px-1.5 py-0.5 rounded">fbclid</span>}
+                        {followUpBadge(lead)}
+                        {isDuplicate && <span className="ml-2 inline-block bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 rounded">duplicate</span>}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        {lead.phone ? (
-                          <a href={`tel:${lead.phone}`} onClick={(e) => e.stopPropagation()} className="text-blue-600 hover:underline">
-                            {lead.phone}
-                          </a>
-                        ) : "-"}
+                        {lead.phone ? <a href={`tel:${lead.phone}`} onClick={(e) => e.stopPropagation()} className="text-blue-600 hover:underline">{lead.phone}</a> : "-"}
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-700 max-w-[180px] truncate" title={lead.email || ""}>{lead.email || "-"}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{parsed.city || "-"}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-xs">
-                        {quantity ? (
-                          <span className="bg-amber-50 text-amber-800 px-2 py-0.5 rounded font-medium">{quantity}</span>
-                        ) : "-"}
-                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-xs">{quantity ? <span className="bg-amber-50 text-amber-800 px-2 py-0.5 rounded font-medium">{quantity}</span> : "-"}</td>
                       <td className="px-4 py-3 capitalize text-xs whitespace-nowrap">{lead.source.replace("_", " ")}</td>
-                      <td className="px-4 py-3 text-xs text-gray-600 max-w-[140px] truncate" title={lead.utm_campaign || ""}>{lead.utm_campaign || "-"}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusColors[lead.status] || "bg-gray-100 text-gray-700"}`}>
-                          {lead.status}
-                        </span>
-                      </td>
+                      <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusColors[lead.status] || "bg-gray-100 text-gray-700"}`}>{lead.status}</span></td>
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                        <select
-                          className="text-xs border rounded px-2 py-1"
-                          value={lead.status}
-                          onChange={(e) => updateStatus(lead.id, e.target.value)}
-                        >
+                        <select className="text-xs border rounded px-2 py-1" value={lead.status} onChange={(e) => updateStatus(lead.id, e.target.value)}>
                           <option value="new">New</option>
                           <option value="contacted">Contacted</option>
                           <option value="qualified">Qualified</option>
@@ -439,83 +529,75 @@ export default function LeadsPage() {
 
                     {isExpanded && (
                       <tr className="bg-blue-50/30 border-b">
-                        <td colSpan={10} className="px-6 py-4">
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                            <div>
-                              <div className="text-gray-500 mb-0.5">Submitted</div>
-                              <div className="font-medium">{new Date(lead.created_at).toLocaleString()}</div>
-                            </div>
-                            <div>
-                              <div className="text-gray-500 mb-0.5">Form</div>
-                              <div className="font-medium">{parsed.form || "-"}</div>
-                            </div>
-                            <div>
-                              <div className="text-gray-500 mb-0.5">UTM Source</div>
-                              <div className="font-medium">{lead.utm_source || "-"}</div>
-                            </div>
-                            <div>
-                              <div className="text-gray-500 mb-0.5">UTM Campaign</div>
-                              <div className="font-medium">{lead.utm_campaign || "-"}</div>
-                            </div>
-                            {lead.gclid && (
-                              <div className="col-span-2">
-                                <div className="text-gray-500 mb-0.5">GCLID</div>
-                                <div className="font-mono text-[10px] truncate" title={lead.gclid || ""}>{lead.gclid}</div>
-                              </div>
-                            )}
-                            {lead.fbclid && (
-                              <div className="col-span-2">
-                                <div className="text-gray-500 mb-0.5">FBCLID</div>
-                                <div className="font-mono text-[10px] truncate" title={lead.fbclid || ""}>{lead.fbclid}</div>
-                              </div>
-                            )}
-                            <div className="md:col-span-4">
-                              <div className="text-gray-500 mb-0.5">Notes (raw)</div>
-                              <div className="font-medium whitespace-pre-line bg-white border rounded p-2">{lead.notes || "-"}</div>
-                            </div>
+                        <td colSpan={9} className="px-6 py-4">
+                          {/* Top: details + contact buttons */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs mb-4">
+                            <div><div className="text-gray-500 mb-0.5">Submitted</div><div className="font-medium">{new Date(lead.created_at).toLocaleString()}</div></div>
+                            <div><div className="text-gray-500 mb-0.5">Form</div><div className="font-medium">{parsed.form || "-"}</div></div>
+                            <div><div className="text-gray-500 mb-0.5">UTM Source</div><div className="font-medium">{lead.utm_source || "-"}</div></div>
+                            <div><div className="text-gray-500 mb-0.5">UTM Campaign</div><div className="font-medium">{lead.utm_campaign || "-"}</div></div>
+                            <div className="md:col-span-4"><div className="text-gray-500 mb-0.5">Notes (raw)</div><div className="font-medium whitespace-pre-line bg-white border rounded p-2">{lead.notes || "-"}</div></div>
                           </div>
-                          <div className="mt-3 flex gap-2 flex-wrap items-center">
-                            {lead.phone && (
-                              <a
-                                href={`tel:${lead.phone}`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700"
-                              >
-                                📞 Call {lead.phone}
-                              </a>
-                            )}
-                            {lead.phone && (
-                              <a
-                                href={waLink(lead.phone)}
-                                target="_blank"
-                                rel="noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="text-xs bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700"
-                              >
-                                💬 WhatsApp
-                              </a>
-                            )}
-                            {lead.email && (
-                              <a
-                                href={`mailto:${lead.email}`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="text-xs bg-gray-600 text-white px-3 py-1.5 rounded hover:bg-gray-700"
-                              >
-                                ✉️ Email
-                              </a>
-                            )}
+
+                          <div className="flex gap-2 flex-wrap items-center mb-4">
+                            {lead.phone && <a href={`tel:${lead.phone}`} onClick={(e) => e.stopPropagation()} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700">📞 Call</a>}
+                            {lead.phone && <a href={waLink(lead.phone)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700">💬 WhatsApp</a>}
+                            {lead.email && <a href={`mailto:${lead.email}`} onClick={(e) => e.stopPropagation()} className="text-xs bg-gray-600 text-white px-3 py-1.5 rounded hover:bg-gray-700">✉️ Email</a>}
                             <div className="ml-auto">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  deleteLead(lead.id, lead.name);
-                                }}
-                                disabled={deletingId === lead.id}
-                                className="text-xs bg-red-600 text-white px-3 py-1.5 rounded hover:bg-red-700 disabled:opacity-50"
-                              >
-                                {deletingId === lead.id ? "Deleting..." : "🗑️ Delete Lead"}
+                              <button onClick={(e) => { e.stopPropagation(); deleteLead(lead.id, lead.name); }} disabled={deletingId === lead.id} className="text-xs bg-red-600 text-white px-3 py-1.5 rounded hover:bg-red-700 disabled:opacity-50">
+                                {deletingId === lead.id ? "Deleting..." : "🗑️ Delete"}
                               </button>
                             </div>
+                          </div>
+
+                          {/* Follow-up reminder */}
+                          <div className="bg-white border rounded p-3 mb-4" onClick={(e) => e.stopPropagation()}>
+                            <div className="text-xs font-semibold text-gray-700 mb-2">⏰ Follow-up Reminder</div>
+                            <div className="flex flex-wrap gap-2 items-center">
+                              <input
+                                type="datetime-local"
+                                value={followUpInput}
+                                onChange={(e) => setFollowUpInput(e.target.value)}
+                                className="border rounded px-2 py-1.5 text-xs"
+                              />
+                              <button onClick={() => saveFollowUp(lead.id)} className="text-xs bg-gray-900 text-white px-3 py-1.5 rounded hover:bg-gray-800">Set reminder</button>
+                              {lead.follow_up_at && (
+                                <button onClick={() => { setFollowUpInput(""); saveFollowUp(lead.id); }} className="text-xs text-red-600 hover:underline">Clear</button>
+                              )}
+                              {lead.follow_up_at && (
+                                <span className="text-xs text-gray-500">Current: {new Date(lead.follow_up_at).toLocaleString()}</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Notes / Activity log */}
+                          <div className="bg-white border rounded p-3" onClick={(e) => e.stopPropagation()}>
+                            <div className="text-xs font-semibold text-gray-700 mb-2">📝 Notes & Activity</div>
+                            <div className="flex gap-2 mb-3">
+                              <input
+                                type="text"
+                                placeholder="What was discussed? e.g. Called, interested in 500 pcs..."
+                                value={newNote}
+                                onChange={(e) => setNewNote(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") addNote(lead.id); }}
+                                className="flex-1 border rounded px-2 py-1.5 text-xs"
+                              />
+                              <button onClick={() => addNote(lead.id)} disabled={savingNote || !newNote.trim()} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 disabled:opacity-50">
+                                {savingNote ? "..." : "Add"}
+                              </button>
+                            </div>
+                            {activities.length === 0 ? (
+                              <p className="text-xs text-gray-400">No notes yet. Add what was discussed with this lead.</p>
+                            ) : (
+                              <div className="space-y-2 max-h-48 overflow-y-auto">
+                                {activities.map((a) => (
+                                  <div key={a.id} className="text-xs border-l-2 border-blue-200 pl-2">
+                                    <div className="text-gray-700">{a.note}</div>
+                                    <div className="text-[10px] text-gray-400">{a.created_at ? new Date(a.created_at).toLocaleString() : ""}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </td>
                       </tr>

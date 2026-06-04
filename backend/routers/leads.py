@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timedelta
 from database import get_db
-from models import Lead, normalize_phone
+from models import Lead, LeadActivity, normalize_phone
 from deps import get_current_tenant
 import uuid
 
@@ -21,9 +21,16 @@ class LeadCreate(BaseModel):
 
 
 class LeadUpdate(BaseModel):
-    status:      Optional[str] = None
-    notes:       Optional[str] = None
-    assigned_to: Optional[str] = None
+    status:       Optional[str] = None
+    notes:        Optional[str] = None
+    assigned_to:  Optional[str] = None
+    follow_up_at: Optional[datetime] = None
+
+
+class ActivityCreate(BaseModel):
+    note:          str
+    activity_type: Optional[str] = "note"
+    created_by:    Optional[str] = None
 
 
 @router.get("/")
@@ -39,7 +46,6 @@ def get_leads(
     offset:    int               = Query(0,  ge=0),
 ):
     q = db.query(Lead).filter(Lead.tenant_id == tenant_id)
-
     if status:   q = q.filter(Lead.status == status)
     if source:   q = q.filter(Lead.source == source)
     if campaign: q = q.filter(Lead.utm_campaign == campaign)
@@ -142,35 +148,116 @@ def cleanup_duplicates(
     tenant_id: str     = Depends(get_current_tenant),
     db:        Session = Depends(get_db),
 ):
-    """
-    Scan all leads for this tenant. For each phone (normalized), keep the
-    newest lead, delete the older duplicates. Returns count of deletions.
-    """
     leads = (
         db.query(Lead)
         .filter(Lead.tenant_id == tenant_id, Lead.phone.isnot(None))
         .order_by(Lead.created_at.desc())
         .all()
     )
-
     seen_phones: set[str] = set()
     deleted = 0
-
     for lead in leads:
         normalized = normalize_phone(lead.phone)
         if not normalized:
             continue
         if normalized in seen_phones:
-            # Older lead with phone already seen with newer entry - delete
             db.delete(lead)
             deleted += 1
         else:
             seen_phones.add(normalized)
-
     if deleted:
         db.commit()
-
     return {"deleted": deleted, "kept": len(seen_phones)}
+
+
+# ---- Reminders (must be defined BEFORE /{lead_id}) ----
+
+@router.get("/reminders/list")
+def reminders_list(
+    tenant_id: str     = Depends(get_current_tenant),
+    db:        Session = Depends(get_db),
+):
+    """All pending follow-ups (not won/lost) ordered by due time."""
+    rows = (
+        db.query(Lead)
+        .filter(
+            Lead.tenant_id == tenant_id,
+            Lead.follow_up_at.isnot(None),
+            Lead.status.notin_(["won", "lost"]),
+        )
+        .order_by(Lead.follow_up_at.asc())
+        .limit(200)
+        .all()
+    )
+    now = datetime.utcnow()
+    items = []
+    for l in rows:
+        items.append({
+            "id": l.id,
+            "name": l.name,
+            "phone": l.phone,
+            "follow_up_at": l.follow_up_at.isoformat() if l.follow_up_at else None,
+            "status": l.status,
+            "overdue": bool(l.follow_up_at and l.follow_up_at < now),
+        })
+    return {"items": items, "count": len(items)}
+
+
+# ---- Activity log ----
+
+@router.get("/{lead_id}/activities")
+def get_activities(
+    lead_id:   str,
+    tenant_id: str     = Depends(get_current_tenant),
+    db:        Session = Depends(get_db),
+):
+    rows = (
+        db.query(LeadActivity)
+        .filter(LeadActivity.lead_id == lead_id, LeadActivity.tenant_id == tenant_id)
+        .order_by(LeadActivity.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": a.id,
+            "note": a.note,
+            "activity_type": a.activity_type,
+            "created_by": a.created_by,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        }
+        for a in rows
+    ]
+
+
+@router.post("/{lead_id}/activities")
+def add_activity(
+    lead_id:   str,
+    data:      ActivityCreate,
+    tenant_id: str     = Depends(get_current_tenant),
+    db:        Session = Depends(get_db),
+):
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    activity = LeadActivity(
+        id=str(uuid.uuid4()),
+        lead_id=lead_id,
+        tenant_id=tenant_id,
+        note=data.note,
+        activity_type=data.activity_type or "note",
+        created_by=data.created_by,
+    )
+    db.add(activity)
+    db.commit()
+    db.refresh(activity)
+    return {
+        "id": activity.id,
+        "note": activity.note,
+        "activity_type": activity.activity_type,
+        "created_by": activity.created_by,
+        "created_at": activity.created_at.isoformat() if activity.created_at else None,
+    }
 
 
 @router.get("/{lead_id}")
@@ -179,10 +266,7 @@ def get_lead(
     tenant_id: str     = Depends(get_current_tenant),
     db:        Session = Depends(get_db)
 ):
-    lead = db.query(Lead).filter(
-        Lead.id == lead_id,
-        Lead.tenant_id == tenant_id
-    ).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     return lead
@@ -195,10 +279,7 @@ def update_lead(
     tenant_id: str     = Depends(get_current_tenant),
     db:        Session = Depends(get_db)
 ):
-    lead = db.query(Lead).filter(
-        Lead.id == lead_id,
-        Lead.tenant_id == tenant_id
-    ).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -217,13 +298,13 @@ def delete_lead(
     tenant_id: str     = Depends(get_current_tenant),
     db:        Session = Depends(get_db)
 ):
-    lead = db.query(Lead).filter(
-        Lead.id == lead_id,
-        Lead.tenant_id == tenant_id
-    ).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
-
+    # Clean up its activities too
+    db.query(LeadActivity).filter(
+        LeadActivity.lead_id == lead_id, LeadActivity.tenant_id == tenant_id
+    ).delete()
     db.delete(lead)
     db.commit()
     return {"message": "Lead deleted"}

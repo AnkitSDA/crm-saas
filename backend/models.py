@@ -8,32 +8,17 @@ def gen_uuid():
     return str(uuid.uuid4())
 
 def gen_api_key():
-    # 32-byte url-safe token -> ~43 chars. Prefixed for easy identification.
     return "crm_" + secrets.token_urlsafe(32)
 
 def normalize_phone(phone: str | None) -> str | None:
-    """
-    Normalize an Indian phone number for duplicate detection.
-    Strips spaces, dashes, brackets, +, leading 0, leading 91.
-    Returns the last 10 digits, or None if not a valid phone.
-
-    Examples:
-        "9711110147"      -> "9711110147"
-        "09711110147"     -> "9711110147"
-        "+91 9711 110147" -> "9711110147"
-        "919711110147"    -> "9711110147"
-    """
+    """Normalize an Indian phone number for duplicate detection."""
     if not phone:
         return None
-    # Keep only digits
     digits = "".join(c for c in phone if c.isdigit())
-    # Strip India country code if present
     if len(digits) > 10 and digits.startswith("91"):
         digits = digits[2:]
-    # Strip leading zero
     if len(digits) > 10 and digits.startswith("0"):
         digits = digits[1:]
-    # Use last 10 digits (handles any remaining prefixes)
     if len(digits) >= 10:
         return digits[-10:]
     return digits if digits else None
@@ -75,7 +60,10 @@ class Lead(Base):
     notes       = Column(Text)
     assigned_to = Column(String(36), nullable=True, index=True)
 
-    # Google Ads / marketing attribution
+    # Follow-up reminder
+    follow_up_at = Column(DateTime, nullable=True, index=True)
+
+    # Marketing attribution
     utm_source   = Column(String(255), nullable=True, index=True)
     utm_medium   = Column(String(255), nullable=True)
     utm_campaign = Column(String(255), nullable=True, index=True)
@@ -89,5 +77,19 @@ class Lead(Base):
     created_at  = Column(DateTime, server_default=func.now())
     updated_at  = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
-# Composite index for common dashboard query (tenant + date)
 Index("ix_leads_tenant_created", Lead.tenant_id, Lead.created_at)
+
+
+class LeadActivity(Base):
+    """Timestamped notes / activity log on a lead (calls, messages, notes)."""
+    __tablename__ = "lead_activities"
+
+    id            = Column(String(36), primary_key=True, default=gen_uuid)
+    lead_id       = Column(String(36), nullable=False, index=True)
+    tenant_id     = Column(String(36), nullable=False, index=True)
+    note          = Column(Text)
+    activity_type = Column(String(50), default="note")  # note | call | whatsapp | email | status
+    created_by    = Column(String(255), nullable=True)
+    created_at    = Column(DateTime, server_default=func.now())
+
+Index("ix_activities_lead_created", LeadActivity.lead_id, LeadActivity.created_at)
