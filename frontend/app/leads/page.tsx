@@ -210,9 +210,11 @@ export default function LeadsPage() {
 
   async function saveFollowUp(leadId: string) {
     try {
-      const iso = followUpInput ? new Date(followUpInput).toISOString() : null;
-      await api.patch(`/leads/${leadId}`, { follow_up_at: iso });
-      toast.success(iso ? "Reminder set" : "Reminder cleared");
+      // Send as local naive datetime (no UTC conversion) so the displayed
+      // time matches what was picked. App is single-timezone (India).
+      const val = followUpInput ? followUpInput + ":00" : null;
+      await api.patch(`/leads/${leadId}`, { follow_up_at: val });
+      toast.success(val ? "Reminder set" : "Reminder cleared");
       fetchLeads();
       fetchReminders();
     } catch {
@@ -324,10 +326,14 @@ export default function LeadsPage() {
     return <span className={`ml-2 inline-block text-[10px] px-1.5 py-0.5 rounded ${cls}`}>{label}</span>;
   }
 
-  const overdueCount = reminders.filter((r) => r.overdue).length;
+  const nowTs = new Date();
+  function isReminderOverdue(r: Reminder) {
+    return !!(r.follow_up_at && new Date(r.follow_up_at) < nowTs);
+  }
+  const overdueCount = reminders.filter((r) => isReminderOverdue(r)).length;
   const todayCount = reminders.filter((r) => {
-    if (!r.follow_up_at || r.overdue) return false;
-    return new Date(r.follow_up_at).toDateString() === new Date().toDateString();
+    if (!r.follow_up_at || isReminderOverdue(r)) return false;
+    return new Date(r.follow_up_at).toDateString() === nowTs.toDateString();
   }).length;
 
   if (loading)
@@ -388,19 +394,20 @@ export default function LeadsPage() {
               <div className="space-y-1.5 max-h-72 overflow-y-auto">
                 {reminders.map((r) => {
                   const due = r.follow_up_at ? new Date(r.follow_up_at) : null;
+                  const overdue = isReminderOverdue(r);
                   return (
                     <div
                       key={r.id}
-                      className={`flex items-center justify-between text-sm px-3 py-2 rounded ${r.overdue ? "bg-red-50" : "bg-gray-50"}`}
+                      className={`flex items-center justify-between text-sm px-3 py-2 rounded ${overdue ? "bg-red-50" : "bg-gray-50"}`}
                     >
                       <div>
                         <span className="font-medium">{r.name || "Unknown"}</span>
                         <span className="text-gray-500 ml-2">{r.phone}</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className={`text-xs ${r.overdue ? "text-red-700 font-medium" : "text-gray-600"}`}>
+                        <span className={`text-xs ${overdue ? "text-red-700 font-medium" : "text-gray-600"}`}>
                           {due ? due.toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}
-                          {r.overdue && " (overdue)"}
+                          {overdue && " (overdue)"}
                         </span>
                         {r.phone && (
                           <a href={`tel:${r.phone}`} onClick={(e) => e.stopPropagation()} className="text-xs bg-blue-600 text-white px-2 py-1 rounded">📞</a>
