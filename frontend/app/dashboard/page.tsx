@@ -53,24 +53,24 @@ const STATUS_COLOR: Record<string, string> = {
 
 const BIG = new Date(8640000000000000);
 
-interface Period { start: Date; end: Date; label: string; isMonth: boolean; days: number; }
+interface Period { start: Date; end: Date; label: string; isRange: boolean; days: number; }
 
 function resolvePeriod(period: string): Period {
   const now = new Date();
   if (period === "this") {
-    return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: new Date(now.getFullYear(), now.getMonth() + 1, 1), label: "This Month", isMonth: true, days: 0 };
+    return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: new Date(now.getFullYear(), now.getMonth() + 1, 1), label: "This Month", isRange: true, days: 0 };
   }
   if (period === "last") {
-    return { start: new Date(now.getFullYear(), now.getMonth() - 1, 1), end: new Date(now.getFullYear(), now.getMonth(), 1), label: "Last Month", isMonth: true, days: 0 };
+    return { start: new Date(now.getFullYear(), now.getMonth() - 1, 1), end: new Date(now.getFullYear(), now.getMonth(), 1), label: "Last Month", isRange: true, days: 0 };
   }
   if (/^\d{4}-\d{2}$/.test(period)) {
     const [y, m] = period.split("-").map(Number);
     const start = new Date(y, m - 1, 1);
-    return { start, end: new Date(y, m, 1), label: formatMonth(period), isMonth: true, days: 0 };
+    return { start, end: new Date(y, m, 1), label: formatMonth(period), isRange: true, days: 0 };
   }
   const days = period === "7d" ? 7 : period === "90d" ? 90 : period === "all" ? 3650 : 30;
   const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - days + 1);
-  return { start, end: BIG, label: period === "all" ? "All time" : `Last ${days} days`, isMonth: false, days };
+  return { start, end: BIG, label: period === "all" ? "All time" : `Last ${days} days`, isRange: false, days };
 }
 
 export default function DashboardPage() {
@@ -78,6 +78,8 @@ export default function DashboardPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState("this");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -97,25 +99,36 @@ export default function DashboardPage() {
   const lastMk = monthKey(new Date(now0.getFullYear(), now0.getMonth() - 1, 1));
   const monthOptions = Array.from(monthsSet).filter((mk) => mk !== thisMk && mk !== lastMk).sort().reverse();
 
-  const sel = resolvePeriod(period);
+  const usingCustom = !!(customStart && customEnd && customStart <= customEnd);
+  let sel: Period;
+  if (usingCustom) {
+    const start = new Date(customStart + "T00:00:00");
+    const end = new Date(customEnd + "T00:00:00"); end.setDate(end.getDate() + 1);
+    const fmt = (s: string) => new Date(s + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+    sel = { start, end, label: `${fmt(customStart)} - ${fmt(customEnd)}`, isRange: true, days: 0 };
+  } else {
+    sel = resolvePeriod(period);
+  }
+
   const inRange = leads.filter((l) => {
     const d = new Date(l.created_at);
     return d >= sel.start && d < sel.end;
   });
 
-  const trendDates: string[] = [];
+  let trendRaw: string[] = [];
   const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0);
-  if (sel.isMonth) {
+  if (sel.isRange) {
     const stop = sel.end < new Date(todayMid.getTime() + 86400000) ? sel.end : new Date(todayMid.getTime() + 86400000);
     let d = new Date(sel.start);
-    while (d < stop) { trendDates.push(dayKey(d)); d = new Date(d.getTime() + 86400000); }
+    while (d < stop) { trendRaw.push(dayKey(d)); d = new Date(d.getTime() + 86400000); }
   } else {
     const n = Math.min(sel.days, 31);
-    for (let i = n - 1; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); trendDates.push(dayKey(d)); }
+    for (let i = n - 1; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); trendRaw.push(dayKey(d)); }
   }
+  const trendDates = trendRaw.length > 62 ? trendRaw.slice(-62) : trendRaw;
 
   const total = inRange.length;
-  const monthForKpi = sel.isMonth ? inRange.length : inRange.filter((l) => monthKey(new Date(l.created_at)) === thisMk).length;
+  const monthForKpi = sel.isRange ? inRange.length : inRange.filter((l) => monthKey(new Date(l.created_at)) === thisMk).length;
   const won = inRange.filter((l) => l.status === "won").length;
   const convRate = total > 0 ? Math.round((won / total) * 100) : 0;
   const daysSpan = Math.max(1, trendDates.length);
@@ -166,6 +179,8 @@ export default function DashboardPage() {
   const polyline = pts.map((p) => `${p.x},${p.y}`).join(" ");
   const areaPath = pts.length ? `M ${PAD},${H - PAD} L ${pts.map((p) => `${p.x},${p.y}`).join(" L ")} L ${W - PAD},${H - PAD} Z` : "";
 
+  function clearCustom() { setCustomStart(""); setCustomEnd(""); }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b px-6 py-4 flex justify-between items-center">
@@ -178,34 +193,58 @@ export default function DashboardPage() {
       </div>
 
       <div className="px-8 py-6 max-w-[1400px] mx-auto">
-        <div className="flex items-center gap-3 mb-5">
-          <span className="text-sm text-gray-500">Period:</span>
-          <select value={period} onChange={(e) => setPeriod(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm bg-white font-medium">
-            <option value="this">This Month</option>
-            <option value="last">Last Month</option>
-            <option value="7d">Last 7 days</option>
-            <option value="30d">Last 30 days</option>
-            <option value="90d">Last 90 days</option>
-            <option value="all">All time</option>
-            {monthOptions.length > 0 && (
-              <optgroup label="Specific month">
-                {monthOptions.map((mk) => (<option key={mk} value={mk}>{formatMonth(mk)}</option>))}
-              </optgroup>
+        <div className="bg-white border rounded-xl p-3 mb-5 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">Quick:</span>
+            <select
+              value={usingCustom ? "" : period}
+              onChange={(e) => { clearCustom(); setPeriod(e.target.value); }}
+              className={`border rounded-lg px-3 py-1.5 text-sm bg-white font-medium ${usingCustom ? "text-gray-400" : ""}`}
+            >
+              {usingCustom && <option value="">- custom -</option>}
+              <option value="this">This Month</option>
+              <option value="last">Last Month</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+              <option value="90d">Last 90 days</option>
+              <option value="all">All time</option>
+              {monthOptions.length > 0 && (
+                <optgroup label="Specific month">
+                  {monthOptions.map((mk) => (<option key={mk} value={mk}>{formatMonth(mk)}</option>))}
+                </optgroup>
+              )}
+            </select>
+          </div>
+
+          <div className="h-5 w-px bg-gray-200 hidden sm:block" />
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm text-gray-500">Calendar:</span>
+            <input type="date" value={customStart} max={customEnd || undefined}
+              onChange={(e) => setCustomStart(e.target.value)}
+              className="border rounded-lg px-2 py-1.5 text-sm" />
+            <span className="text-gray-400 text-sm">to</span>
+            <input type="date" value={customEnd} min={customStart || undefined}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              className="border rounded-lg px-2 py-1.5 text-sm" />
+            {usingCustom && (
+              <button onClick={clearCustom} className="text-xs text-red-600 hover:underline ml-1">Clear</button>
             )}
-          </select>
-          <span className="text-sm text-gray-400">· {sel.label}</span>
+          </div>
+
+          <span className="text-sm text-gray-400 ml-auto">Showing: <span className="text-gray-700 font-medium">{sel.label}</span></span>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <KpiCard label="Total Leads" value={total} accent="text-gray-900" />
-          <KpiCard label={sel.isMonth ? "In Period" : "This Month"} value={monthForKpi} accent="text-blue-600" />
+          <KpiCard label={sel.isRange ? "In Period" : "This Month"} value={monthForKpi} accent="text-blue-600" />
           <KpiCard label="Won" value={`${won} (${convRate}%)`} accent="text-green-600" />
           <KpiCard label="Avg / Day" value={avgPerDay} accent="text-amber-600" />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
           <div className="lg:col-span-2 bg-white border rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">Leads Trend · {sel.label}</h3>
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">Leads Trend - {sel.label}</h3>
             <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 240 }}>
               <path d={areaPath} fill="#3b82f6" opacity="0.08" />
               <polyline points={polyline} fill="none" stroke="#3b82f6" strokeWidth="2" />
@@ -329,7 +368,7 @@ export default function DashboardPage() {
         </div>
 
         <p className="text-center text-[11px] text-gray-400 mt-6">
-          Showing {sel.label.toLowerCase()} · {total} leads · {leads.length} total in system
+          Showing {sel.label.toLowerCase()} - {total} leads - {leads.length} total in system
         </p>
       </div>
     </div>
