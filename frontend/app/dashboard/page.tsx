@@ -25,6 +25,17 @@ function parseNotes(notes: string | null): Record<string, string> {
   return result;
 }
 
+function dayKey(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function monthKey(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function formatMonth(mk: string) {
+  const [y, m] = mk.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleString("en-US", { month: "long", year: "numeric" });
+}
+
 const SOURCE_META: Record<string, { label: string; color: string }> = {
   google_ads: { label: "Google Ads", color: "#10b981" },
   meta_ads:   { label: "Meta Ads",   color: "#3b82f6" },
@@ -40,18 +51,33 @@ const STATUS_COLOR: Record<string, string> = {
   new: "#3b82f6", contacted: "#eab308", qualified: "#a855f7", won: "#22c55e", lost: "#ef4444",
 };
 
-const RANGES = [
-  { id: 7, label: "7 days" },
-  { id: 30, label: "30 days" },
-  { id: 90, label: "90 days" },
-  { id: 3650, label: "All time" },
-];
+const BIG = new Date(8640000000000000);
+
+interface Period { start: Date; end: Date; label: string; isMonth: boolean; days: number; }
+
+function resolvePeriod(period: string): Period {
+  const now = new Date();
+  if (period === "this") {
+    return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: new Date(now.getFullYear(), now.getMonth() + 1, 1), label: "This Month", isMonth: true, days: 0 };
+  }
+  if (period === "last") {
+    return { start: new Date(now.getFullYear(), now.getMonth() - 1, 1), end: new Date(now.getFullYear(), now.getMonth(), 1), label: "Last Month", isMonth: true, days: 0 };
+  }
+  if (/^\d{4}-\d{2}$/.test(period)) {
+    const [y, m] = period.split("-").map(Number);
+    const start = new Date(y, m - 1, 1);
+    return { start, end: new Date(y, m, 1), label: formatMonth(period), isMonth: true, days: 0 };
+  }
+  const days = period === "7d" ? 7 : period === "90d" ? 90 : period === "all" ? 3650 : 30;
+  const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - days + 1);
+  return { start, end: BIG, label: period === "all" ? "All time" : `Last ${days} days`, isMonth: false, days };
+}
 
 export default function DashboardPage() {
   const router = useRouter();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [rangeDays, setRangeDays] = useState(30);
+  const [period, setPeriod] = useState("this");
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -65,106 +91,80 @@ export default function DashboardPage() {
   if (loading)
     return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
 
-  // ---- Filter by range ----
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - rangeDays);
-  const inRange = leads.filter((l) => new Date(l.created_at) >= cutoff);
+  const monthsSet = new Set(leads.map((l) => monthKey(new Date(l.created_at))));
+  const now0 = new Date();
+  const thisMk = monthKey(now0);
+  const lastMk = monthKey(new Date(now0.getFullYear(), now0.getMonth() - 1, 1));
+  const monthOptions = Array.from(monthsSet).filter((mk) => mk !== thisMk && mk !== lastMk).sort().reverse();
 
-  // ---- KPIs ----
-  const total = inRange.length;
-  const now = new Date();
-  const thisMonth = inRange.filter((l) => {
+  const sel = resolvePeriod(period);
+  const inRange = leads.filter((l) => {
     const d = new Date(l.created_at);
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-  }).length;
+    return d >= sel.start && d < sel.end;
+  });
+
+  const trendDates: string[] = [];
+  const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0);
+  if (sel.isMonth) {
+    const stop = sel.end < new Date(todayMid.getTime() + 86400000) ? sel.end : new Date(todayMid.getTime() + 86400000);
+    let d = new Date(sel.start);
+    while (d < stop) { trendDates.push(dayKey(d)); d = new Date(d.getTime() + 86400000); }
+  } else {
+    const n = Math.min(sel.days, 31);
+    for (let i = n - 1; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); trendDates.push(dayKey(d)); }
+  }
+
+  const total = inRange.length;
+  const monthForKpi = sel.isMonth ? inRange.length : inRange.filter((l) => monthKey(new Date(l.created_at)) === thisMk).length;
   const won = inRange.filter((l) => l.status === "won").length;
   const convRate = total > 0 ? Math.round((won / total) * 100) : 0;
-  const daysSpan = Math.max(1, Math.min(rangeDays, 90));
+  const daysSpan = Math.max(1, trendDates.length);
   const avgPerDay = (total / daysSpan).toFixed(1);
 
-  // ---- Source breakdown ----
   const sourceCounts: Record<string, number> = {};
   inRange.forEach((l) => { sourceCounts[l.source] = (sourceCounts[l.source] || 0) + 1; });
-  const sourceData = Object.entries(sourceCounts)
-    .map(([s, c]) => ({ source: s, count: c, ...sourceInfo(s) }))
-    .sort((a, b) => b.count - a.count);
+  const sourceData = Object.entries(sourceCounts).map(([s, c]) => ({ source: s, count: c, ...sourceInfo(s) })).sort((a, b) => b.count - a.count);
 
-  // ---- Status funnel ----
   const statusCounts: Record<string, number> = {};
   inRange.forEach((l) => { statusCounts[l.status] = (statusCounts[l.status] || 0) + 1; });
   const maxStatus = Math.max(1, ...STATUS_ORDER.map((s) => statusCounts[s] || 0));
 
-  // ---- Top cities ----
   const cityCounts: Record<string, number> = {};
-  inRange.forEach((l) => {
-    const city = parseNotes(l.notes).city;
-    if (city) {
-      const key = city.trim();
-      cityCounts[key] = (cityCounts[key] || 0) + 1;
-    }
-  });
-  const topCities = Object.entries(cityCounts).map(([c, n]) => ({ city: c, count: n }))
-    .sort((a, b) => b.count - a.count).slice(0, 8);
+  inRange.forEach((l) => { const city = parseNotes(l.notes).city; if (city) { const k = city.trim(); cityCounts[k] = (cityCounts[k] || 0) + 1; } });
+  const topCities = Object.entries(cityCounts).map(([c, n]) => ({ city: c, count: n })).sort((a, b) => b.count - a.count).slice(0, 8);
   const maxCity = Math.max(1, ...topCities.map((c) => c.count));
 
-  // ---- Quantity distribution ----
   const qtyCounts: Record<string, number> = {};
-  inRange.forEach((l) => {
-    const p = parseNotes(l.notes);
-    const q = p.quantity || p.message || p.requirement;
-    if (q) { const key = q.trim(); qtyCounts[key] = (qtyCounts[key] || 0) + 1; }
-  });
-  const qtyData = Object.entries(qtyCounts).map(([q, n]) => ({ qty: q, count: n }))
-    .sort((a, b) => b.count - a.count).slice(0, 6);
+  inRange.forEach((l) => { const p = parseNotes(l.notes); const q = p.quantity || p.message || p.requirement; if (q) { const k = q.trim(); qtyCounts[k] = (qtyCounts[k] || 0) + 1; } });
+  const qtyData = Object.entries(qtyCounts).map(([q, n]) => ({ qty: q, count: n })).sort((a, b) => b.count - a.count).slice(0, 6);
   const maxQty = Math.max(1, ...qtyData.map((q) => q.count));
 
-  // ---- Daily trend ----
   const dayMap: Record<string, number> = {};
-  const trendDays = Math.min(rangeDays, 30);
-  for (let i = trendDays - 1; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i);
-    dayMap[d.toISOString().slice(0, 10)] = 0;
-  }
-  inRange.forEach((l) => {
-    const key = new Date(l.created_at).toISOString().slice(0, 10);
-    if (key in dayMap) dayMap[key]++;
-  });
-  const trend = Object.entries(dayMap).map(([date, count]) => ({ date, count }));
+  trendDates.forEach((d) => { dayMap[d] = 0; });
+  inRange.forEach((l) => { const k = dayKey(new Date(l.created_at)); if (k in dayMap) dayMap[k]++; });
+  const trend = trendDates.map((date) => ({ date, count: dayMap[date] }));
   const maxTrend = Math.max(1, ...trend.map((t) => t.count));
 
-  // ---- Campaign performance ----
   const campMap: Record<string, { total: number; won: number }> = {};
-  inRange.forEach((l) => {
-    const c = l.utm_campaign;
-    if (!c) return;
-    if (!campMap[c]) campMap[c] = { total: 0, won: 0 };
-    campMap[c].total++;
-    if (l.status === "won") campMap[c].won++;
-  });
-  const campaigns = Object.entries(campMap).map(([c, v]) => ({ campaign: c, ...v }))
-    .sort((a, b) => b.total - a.total).slice(0, 6);
+  inRange.forEach((l) => { const c = l.utm_campaign; if (!c) return; if (!campMap[c]) campMap[c] = { total: 0, won: 0 }; campMap[c].total++; if (l.status === "won") campMap[c].won++; });
+  const campaigns = Object.entries(campMap).map(([c, v]) => ({ campaign: c, ...v })).sort((a, b) => b.total - a.total).slice(0, 6);
 
-  // ---- Donut geometry ----
   const R = 70, C = 2 * Math.PI * R;
   let cumulative = 0;
   const donutSegments = sourceData.map((s) => {
     const frac = total > 0 ? s.count / total : 0;
     const seg = { ...s, frac, dash: frac * C, offset: -cumulative * C };
-    cumulative += frac;
-    return seg;
+    cumulative += frac; return seg;
   });
 
-  // ---- Line chart geometry ----
-  const W = 640, H = 180, PAD = 24;
+  const W = 640, H = 200, PAD = 24;
   const pts = trend.map((t, i) => {
     const x = PAD + (i * (W - 2 * PAD)) / Math.max(1, trend.length - 1);
     const y = H - PAD - (t.count / maxTrend) * (H - 2 * PAD);
     return { x, y, ...t };
   });
   const polyline = pts.map((p) => `${p.x},${p.y}`).join(" ");
-  const areaPath = pts.length
-    ? `M ${PAD},${H - PAD} L ${pts.map((p) => `${p.x},${p.y}`).join(" L ")} L ${W - PAD},${H - PAD} Z`
-    : "";
+  const areaPath = pts.length ? `M ${PAD},${H - PAD} L ${pts.map((p) => `${p.x},${p.y}`).join(" L ")} L ${W - PAD},${H - PAD} Z` : "";
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -177,33 +177,36 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="p-6 max-w-6xl mx-auto">
-        {/* Range filter */}
-        <div className="flex gap-2 mb-5">
-          {RANGES.map((r) => (
-            <button
-              key={r.id}
-              onClick={() => setRangeDays(r.id)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${rangeDays === r.id ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-700 border-gray-200 hover:border-gray-400"}`}
-            >
-              {r.label}
-            </button>
-          ))}
+      <div className="px-8 py-6 max-w-[1400px] mx-auto">
+        <div className="flex items-center gap-3 mb-5">
+          <span className="text-sm text-gray-500">Period:</span>
+          <select value={period} onChange={(e) => setPeriod(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm bg-white font-medium">
+            <option value="this">This Month</option>
+            <option value="last">Last Month</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+            <option value="90d">Last 90 days</option>
+            <option value="all">All time</option>
+            {monthOptions.length > 0 && (
+              <optgroup label="Specific month">
+                {monthOptions.map((mk) => (<option key={mk} value={mk}>{formatMonth(mk)}</option>))}
+              </optgroup>
+            )}
+          </select>
+          <span className="text-sm text-gray-400">· {sel.label}</span>
         </div>
 
-        {/* KPI cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <KpiCard label="Total Leads" value={total} accent="text-gray-900" />
-          <KpiCard label="This Month" value={thisMonth} accent="text-blue-600" />
+          <KpiCard label={sel.isMonth ? "In Period" : "This Month"} value={monthForKpi} accent="text-blue-600" />
           <KpiCard label="Won" value={`${won} (${convRate}%)`} accent="text-green-600" />
           <KpiCard label="Avg / Day" value={avgPerDay} accent="text-amber-600" />
         </div>
 
-        {/* Row: Trend + Source donut */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
           <div className="lg:col-span-2 bg-white border rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">Leads Trend (last {trendDays} days)</h3>
-            <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 200 }}>
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">Leads Trend · {sel.label}</h3>
+            <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 240 }}>
               <path d={areaPath} fill="#3b82f6" opacity="0.08" />
               <polyline points={polyline} fill="none" stroke="#3b82f6" strokeWidth="2" />
               {pts.map((p, i) => (<circle key={i} cx={p.x} cy={p.y} r="3" fill="#3b82f6" />))}
@@ -218,15 +221,12 @@ export default function DashboardPage() {
 
           <div className="bg-white border rounded-xl p-5">
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Lead Sources</h3>
-            {total === 0 ? (
-              <p className="text-xs text-gray-400">No data</p>
-            ) : (
+            {total === 0 ? <p className="text-xs text-gray-400">No data in this period</p> : (
               <div className="flex flex-col items-center">
                 <svg viewBox="0 0 180 180" className="w-40 h-40">
                   <g transform="rotate(-90 90 90)">
                     {donutSegments.map((s, i) => (
-                      <circle key={i} cx="90" cy="90" r={R} fill="none" stroke={s.color}
-                        strokeWidth="22" strokeDasharray={`${s.dash} ${C}`} strokeDashoffset={s.offset} />
+                      <circle key={i} cx="90" cy="90" r={R} fill="none" stroke={s.color} strokeWidth="22" strokeDasharray={`${s.dash} ${C}`} strokeDashoffset={s.offset} />
                     ))}
                   </g>
                   <text x="90" y="86" textAnchor="middle" className="fill-gray-900" style={{ fontSize: 26, fontWeight: 700 }}>{total}</text>
@@ -235,10 +235,7 @@ export default function DashboardPage() {
                 <div className="mt-3 w-full space-y-1.5">
                   {donutSegments.map((s, i) => (
                     <div key={i} className="flex items-center justify-between text-xs">
-                      <span className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-sm" style={{ background: s.color }} />
-                        {s.label}
-                      </span>
+                      <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: s.color }} />{s.label}</span>
                       <span className="text-gray-500">{s.count} ({Math.round(s.frac * 100)}%)</span>
                     </div>
                   ))}
@@ -248,7 +245,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Row: Status funnel + Quantity */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
           <div className="bg-white border rounded-xl p-5">
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Pipeline (Status)</h3>
@@ -288,7 +284,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Row: Top cities + Campaigns */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="bg-white border rounded-xl p-5">
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Top Cities</h3>
@@ -334,7 +329,7 @@ export default function DashboardPage() {
         </div>
 
         <p className="text-center text-[11px] text-gray-400 mt-6">
-          Showing data for {RANGES.find((r) => r.id === rangeDays)?.label.toLowerCase()} · {leads.length} total leads in system
+          Showing {sel.label.toLowerCase()} · {total} leads · {leads.length} total in system
         </p>
       </div>
     </div>
