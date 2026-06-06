@@ -26,13 +26,13 @@ function addDays(d: Date, n: number) { const x = new Date(d); x.setDate(x.getDat
 function sameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 function fmtShort(d: Date) { return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }); }
 
-const SOURCE_META: Record<string, { label: string; color: string }> = {
-  google_ads: { label: "Google Ads", color: "#10b981" },
-  meta_ads:   { label: "Meta Ads",   color: "#3b82f6" },
-  website:    { label: "Website",    color: "#64748b" },
-  manual:     { label: "Manual",     color: "#f59e0b" },
+const SOURCE_META: Record<string, { label: string; color: string; light: string }> = {
+  google_ads: { label: "Google Ads", color: "#10b981", light: "#6ee7b7" },
+  meta_ads:   { label: "Meta Ads",   color: "#3b82f6", light: "#93c5fd" },
+  website:    { label: "Website",    color: "#64748b", light: "#cbd5e1" },
+  manual:     { label: "Manual",     color: "#f59e0b", light: "#fcd34d" },
 };
-function sourceInfo(s: string) { return SOURCE_META[s] || { label: s.replace("_", " "), color: "#a3a3a3" }; }
+function sourceInfo(s: string) { return SOURCE_META[s] || { label: s.replace("_", " "), color: "#a3a3a3", light: "#d4d4d4" }; }
 const STATUS_ORDER = ["new", "contacted", "qualified", "won", "lost"];
 const STATUS_COLOR: Record<string, string> = { new: "#3b82f6", contacted: "#eab308", qualified: "#a855f7", won: "#22c55e", lost: "#ef4444" };
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -42,7 +42,7 @@ function CountUp({ value, decimals = 0, suffix = "" }: { value: number; decimals
   const [display, setDisplay] = useState(value);
   const prev = useRef(value);
   useEffect(() => {
-    const start = prev.current, end = value, dur = 550, t0 = performance.now();
+    const start = prev.current, end = value, dur = 600, t0 = performance.now();
     let raf = 0;
     const tick = (t: number) => {
       const p = Math.min(1, (t - t0) / dur);
@@ -56,15 +56,27 @@ function CountUp({ value, decimals = 0, suffix = "" }: { value: number; decimals
   return <>{display.toFixed(decimals)}{suffix}</>;
 }
 
-function Bar({ pct, color, count, ready }: { pct: number; color: string; count: number; ready: boolean }) {
+function GradBar({ pct, color, light, count, ready }: { pct: number; color: string; light: string; count: number; ready: boolean }) {
   return (
-    <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
-      <div className="h-5 rounded-full flex items-center justify-end pr-2 transition-all duration-700 ease-out hover:brightness-110"
-        style={{ width: `${ready ? pct : 0}%`, background: color, minWidth: count > 0 ? 24 : 0 }}>
-        {count > 0 && <span className="text-[10px] text-white font-medium">{count}</span>}
+    <div className="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden">
+      <div className="h-6 rounded-full flex items-center justify-end pr-2 transition-all duration-700 ease-out hover:brightness-105"
+        style={{ width: `${ready ? pct : 0}%`, background: `linear-gradient(90deg, ${light}, ${color})`, minWidth: count > 0 ? 26 : 0, boxShadow: "inset 0 1px 0 rgba(255,255,255,0.35)" }}>
+        {count > 0 && <span className="text-[11px] text-white font-semibold drop-shadow">{count}</span>}
       </div>
     </div>
   );
+}
+
+function smoothPath(pts: { x: number; y: number }[]) {
+  if (pts.length < 2) return pts.length ? `M ${pts[0].x} ${pts[0].y}` : "";
+  let d = `M ${pts[0].x} ${pts[0].y}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    const cp1x = p1.x + (p2.x - p0.x) / 6, cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6, cp2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+  }
+  return d;
 }
 
 function DateRangePicker({ range, onChange }: { range: RangeSel; onChange: (r: RangeSel) => void }) {
@@ -81,8 +93,7 @@ function DateRangePicker({ range, onChange }: { range: RangeSel; onChange: (r: R
     setOpen(true);
   }
   function applyRange(s: Date, eInclusive: Date, label?: string) {
-    const start = startOfDay(s);
-    const end = addDays(startOfDay(eInclusive), 1);
+    const start = startOfDay(s), end = addDays(startOfDay(eInclusive), 1);
     onChange({ start, end, label: label || `${fmtShort(start)} - ${fmtShort(startOfDay(eInclusive))}` });
     setOpen(false);
   }
@@ -104,15 +115,12 @@ function DateRangePicker({ range, onChange }: { range: RangeSel; onChange: (r: R
     if (d < tStart) { setTStart(d); return; }
     setTEnd(d); applyRange(tStart, d);
   }
-
   const presets = [
     { id: "today", label: "Today" }, { id: "yesterday", label: "Yesterday" },
     { id: "7d", label: "Last 7 days" }, { id: "14d", label: "Last 14 days" },
     { id: "30d", label: "Last 30 days" }, { id: "90d", label: "Last 90 days" },
-    { id: "this", label: "This month" }, { id: "last", label: "Last month" },
-    { id: "all", label: "All time" },
+    { id: "this", label: "This month" }, { id: "last", label: "Last month" }, { id: "all", label: "All time" },
   ];
-
   const y = view.getFullYear(), mo = view.getMonth();
   const startWd = new Date(y, mo, 1).getDay();
   const dim = new Date(y, mo + 1, 0).getDate();
@@ -120,28 +128,24 @@ function DateRangePicker({ range, onChange }: { range: RangeSel; onChange: (r: R
   for (let i = 0; i < startWd; i++) cells.push(null);
   for (let dn = 1; dn <= dim; dn++) cells.push(new Date(y, mo, dn));
   const effEnd = tEnd || hover;
-
   function inR(d: Date) {
     if (!tStart || !effEnd) return false;
     const lo = tStart < effEnd ? tStart : effEnd, hi = tStart < effEnd ? effEnd : tStart;
     return d > lo && d < hi;
   }
-
   return (
     <div className="relative inline-block">
-      <button onClick={openPicker} className="flex items-center gap-2 border rounded-lg px-3 py-1.5 text-sm bg-white font-medium hover:border-gray-400 transition">
+      <button onClick={openPicker} className="flex items-center gap-2 border rounded-lg px-3 py-2 text-sm bg-white font-medium hover:border-gray-400 hover:shadow-sm transition">
         <span>📅</span><span>{range.label}</span><span className="text-gray-400">▾</span>
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute z-50 mt-2 bg-white border rounded-xl shadow-xl flex overflow-hidden" style={{ minWidth: 480 }}>
+          <div className="absolute z-50 mt-2 bg-white border rounded-2xl shadow-2xl flex overflow-hidden" style={{ minWidth: 480 }}>
             <div className="w-40 border-r py-2 max-h-[340px] overflow-y-auto">
               {presets.map((p) => (
                 <button key={p.id} onClick={() => pickPreset(p.id)}
-                  className={`w-full text-left px-4 py-2 text-sm hover:bg-blue-50 transition ${range.label === p.label ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700"}`}>
-                  {p.label}
-                </button>
+                  className={`w-full text-left px-4 py-2 text-sm hover:bg-blue-50 transition ${range.label === p.label ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700"}`}>{p.label}</button>
               ))}
             </div>
             <div className="p-4" style={{ width: 320 }}>
@@ -154,19 +158,15 @@ function DateRangePicker({ range, onChange }: { range: RangeSel; onChange: (r: R
                 {WEEKDAYS.map((w, i) => (<div key={i} className="text-[11px] text-gray-400 font-medium pb-1">{w}</div>))}
                 {cells.map((d, i) => {
                   if (!d) return <div key={i} />;
-                  const isStart = tStart && sameDay(d, tStart);
-                  const isEnd = tEnd && sameDay(d, tEnd);
-                  const future = d > today;
-                  const between = inR(d);
+                  const isStart = tStart && sameDay(d, tStart), isEnd = tEnd && sameDay(d, tEnd);
+                  const future = d > today, between = inR(d);
                   let cls = "text-gray-700 hover:bg-gray-100";
                   if (future) cls = "text-gray-300 cursor-default";
                   else if (isStart || isEnd) cls = "bg-blue-600 text-white font-semibold";
                   else if (between) cls = "bg-blue-100 text-blue-800";
                   return (
                     <button key={i} disabled={future} onClick={() => clickDay(d)} onMouseEnter={() => setHover(d)}
-                      className={`mx-auto w-8 h-8 rounded-full text-xs flex items-center justify-center transition ${cls}`}>
-                      {d.getDate()}
-                    </button>
+                      className={`mx-auto w-8 h-8 rounded-full text-xs flex items-center justify-center transition ${cls}`}>{d.getDate()}</button>
                   );
                 })}
               </div>
@@ -195,22 +195,25 @@ export default function DashboardPage() {
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) { router.push("/login"); return; }
-    api.get("/leads/?limit=500")
-      .then((r) => setLeads(r.data.items || []))
-      .catch(() => router.push("/login"))
-      .finally(() => { setLoading(false); setTimeout(() => setReady(true), 60); });
+    api.get("/leads/?limit=500").then((r) => setLeads(r.data.items || [])).catch(() => router.push("/login")).finally(() => { setLoading(false); setTimeout(() => setReady(true), 60); });
   }, []);
 
-  if (loading) return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+  if (loading) return <div className="flex items-center justify-center min-h-screen text-gray-400">Loading dashboard...</div>;
 
   const periodLeads = leads.filter((l) => { const d = new Date(l.created_at); return d >= range.start && d < range.end; });
   const filtered = sourceFilter ? periodLeads.filter((l) => l.source === sourceFilter) : periodLeads;
 
+  // previous comparable period (for growth %)
+  const rangeLen = range.end.getTime() - range.start.getTime();
+  const prevStart = new Date(range.start.getTime() - rangeLen);
+  const prevAll = leads.filter((l) => { const d = new Date(l.created_at); return d >= prevStart && d < range.start; });
+  const prevFiltered = sourceFilter ? prevAll.filter((l) => l.source === sourceFilter) : prevAll;
+  const prevTotal = prevFiltered.length;
+
   let trendRaw: string[] = [];
   const todayMid = startOfDay(new Date());
   const stop = range.end < addDays(todayMid, 1) ? range.end : addDays(todayMid, 1);
-  let dd = new Date(range.start);
-  let guard = 0;
+  let dd = new Date(range.start); let guard = 0;
   while (dd < stop && guard < 800) { trendRaw.push(dayKey(dd)); dd = addDays(dd, 1); guard++; }
   if (trendRaw.length === 0) trendRaw.push(dayKey(todayMid));
   const trendDates = trendRaw.length > 62 ? trendRaw.slice(-62) : trendRaw;
@@ -219,6 +222,7 @@ export default function DashboardPage() {
   const won = filtered.filter((l) => l.status === "won").length;
   const convRate = total > 0 ? Math.round((won / total) * 100) : 0;
   const avgPerDay = total / Math.max(1, trendDates.length);
+  const deltaPct = prevTotal > 0 ? Math.round(((total - prevTotal) / prevTotal) * 100) : null;
 
   const sourceCounts: Record<string, number> = {};
   periodLeads.forEach((l) => { sourceCounts[l.source] = (sourceCounts[l.source] || 0) + 1; });
@@ -249,23 +253,24 @@ export default function DashboardPage() {
   filtered.forEach((l) => { const c = l.utm_campaign; if (!c) return; if (!campMap[c]) campMap[c] = { total: 0, won: 0 }; campMap[c].total++; if (l.status === "won") campMap[c].won++; });
   const campaigns = Object.entries(campMap).map(([c, v]) => ({ campaign: c, ...v })).sort((a, b) => b.total - a.total).slice(0, 6);
 
-  const R = 70, C = 2 * Math.PI * R;
+  const R = 68, C = 2 * Math.PI * R, GAP = sourceData.length > 1 ? 6 : 0;
   let cumulative = 0;
   const donutSegments = sourceData.map((s) => {
     const frac = sourceTotal > 0 ? s.count / sourceTotal : 0;
-    const seg = { ...s, frac, dash: frac * C, offset: -cumulative * C };
+    const seg = { ...s, frac, dash: Math.max(0, frac * C - GAP), offset: -cumulative * C };
     cumulative += frac; return seg;
   });
 
-  const W = 640, H = 200, PAD = 24;
+  const W = 660, H = 230, PADX = 30, PADY = 24;
   const pts = trend.map((t, i) => {
-    const x = PAD + (i * (W - 2 * PAD)) / Math.max(1, trend.length - 1);
-    const yy = H - PAD - (t.count / maxTrend) * (H - 2 * PAD);
+    const x = PADX + (i * (W - 2 * PADX)) / Math.max(1, trend.length - 1);
+    const yy = H - PADY - (t.count / maxTrend) * (H - 2 * PADY);
     return { x, y: yy, ...t };
   });
-  const polyline = pts.map((p) => `${p.x},${p.y}`).join(" ");
-  const areaPath = pts.length ? `M ${PAD},${H - PAD} L ${pts.map((p) => `${p.x},${p.y}`).join(" L ")} L ${pts[pts.length - 1].x},${H - PAD} Z` : "";
+  const linePath = smoothPath(pts);
+  const areaPath = pts.length ? `${linePath} L ${pts[pts.length - 1].x} ${H - PADY} L ${pts[0].x} ${H - PADY} Z` : "";
   const hp = hoverIdx != null && pts[hoverIdx] ? pts[hoverIdx] : null;
+  const gridVals = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(maxTrend * f));
 
   function toggleSource(s: string) { setSourceFilter((cur) => (cur === s ? "" : s)); }
   function onLineMove(e: React.MouseEvent<SVGSVGElement>) {
@@ -275,9 +280,9 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b px-6 py-4 flex justify-between items-center">
-        <h1 className="text-xl font-semibold">Dashboard</h1>
+    <div className="min-h-screen" style={{ background: "linear-gradient(180deg,#f8fafc,#eef2f7)" }}>
+      <div className="bg-white/80 backdrop-blur border-b px-6 py-4 flex justify-between items-center sticky top-0 z-30">
+        <h1 className="text-xl font-bold tracking-tight">Dashboard</h1>
         <div className="flex gap-4 items-center">
           <button onClick={() => router.push("/leads")} className="text-sm text-blue-600 hover:underline">Leads</button>
           <button onClick={() => router.push("/settings")} className="text-sm text-blue-600 hover:underline">Settings</button>
@@ -285,23 +290,19 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="px-6 py-6 max-w-[1500px] mx-auto">
-        {/* Toolbar: date picker + source chips */}
-        <div className="bg-white border rounded-xl p-3 mb-6 flex flex-wrap items-center gap-3">
-          <span className="text-sm text-gray-500">Period:</span>
+      <div className="px-6 lg:px-10 py-6 max-w-[1760px] mx-auto">
+        {/* Toolbar */}
+        <div className="bg-white border rounded-2xl p-3 mb-6 flex flex-wrap items-center gap-3 shadow-sm">
+          <span className="text-sm text-gray-500 font-medium">Period:</span>
           <DateRangePicker range={range} onChange={(r) => setRange(r)} />
-          <div className="h-5 w-px bg-gray-200 mx-1 hidden sm:block" />
+          <div className="h-6 w-px bg-gray-200 mx-1 hidden sm:block" />
           <span className="text-xs text-gray-400">Source:</span>
-          <button onClick={() => setSourceFilter("")}
-            className={`px-3 py-1 rounded-full text-xs font-medium border transition ${sourceFilter === "" ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"}`}>
-            All
-          </button>
+          <button onClick={() => setSourceFilter("")} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${sourceFilter === "" ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"}`}>All</button>
           {sourceData.map((s) => (
             <button key={s.source} onClick={() => toggleSource(s.source)}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition ${sourceFilter === s.source ? "text-white border-transparent" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"}`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition ${sourceFilter === s.source ? "text-white border-transparent shadow-sm" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"}`}
               style={sourceFilter === s.source ? { background: s.color } : {}}>
-              <span className="w-2 h-2 rounded-full" style={{ background: sourceFilter === s.source ? "#fff" : s.color }} />
-              {s.label}
+              <span className="w-2 h-2 rounded-full" style={{ background: sourceFilter === s.source ? "#fff" : s.color }} />{s.label}
             </button>
           ))}
           <span className="text-sm text-gray-400 ml-auto">{range.label}{sourceFilter ? ` · ${sourceInfo(sourceFilter).label}` : ""}</span>
@@ -309,61 +310,77 @@ export default function DashboardPage() {
 
         {/* KPIs */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <KpiCard label="Total Leads" accent="text-gray-900"><CountUp value={total} /></KpiCard>
-          <KpiCard label="Won" accent="text-green-600"><CountUp value={won} suffix={` (${convRate}%)`} /></KpiCard>
-          <KpiCard label="Avg / Day" accent="text-amber-600"><CountUp value={avgPerDay} decimals={1} /></KpiCard>
-          <KpiCard label="Sources Active" accent="text-blue-600"><CountUp value={sourceData.length} /></KpiCard>
+          <KpiCard label="Total Leads" icon="👥" iconBg="#eff6ff" accent="text-gray-900" delta={deltaPct}><CountUp value={total} /></KpiCard>
+          <KpiCard label="Won" icon="🏆" iconBg="#ecfdf5" accent="text-green-600"><CountUp value={won} suffix={` (${convRate}%)`} /></KpiCard>
+          <KpiCard label="Avg / Day" icon="⚡" iconBg="#fffbeb" accent="text-amber-600"><CountUp value={avgPerDay} decimals={1} /></KpiCard>
+          <KpiCard label="Active Sources" icon="📊" iconBg="#f5f3ff" accent="text-violet-600"><CountUp value={sourceData.length} /></KpiCard>
         </div>
 
         {/* Trend + Donut */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-          <div className="lg:col-span-2 bg-white border rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">Leads Trend - {range.label}{sourceFilter ? ` (${sourceInfo(sourceFilter).label})` : ""}</h3>
+          <div className="lg:col-span-2 bg-white border rounded-2xl p-5 shadow-sm">
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">Leads Trend · {range.label}{sourceFilter ? ` (${sourceInfo(sourceFilter).label})` : ""}</h3>
             <div className="relative">
-              <svg viewBox={`0 0 ${W} ${H}`} className="w-full cursor-crosshair" style={{ maxHeight: 260 }} onMouseMove={onLineMove} onMouseLeave={() => setHoverIdx(null)}>
-                <path d={areaPath} fill="#3b82f6" style={{ opacity: ready ? 0.08 : 0, transition: "opacity 0.6s" }} />
-                <polyline points={polyline} fill="none" stroke="#3b82f6" strokeWidth="2" strokeDasharray={1600} strokeDashoffset={ready ? 0 : 1600} style={{ transition: "stroke-dashoffset 1s ease-out" }} />
-                {hp && <line x1={hp.x} y1={PAD - 6} x2={hp.x} y2={H - PAD} stroke="#3b82f6" strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />}
-                {pts.map((p, i) => (<circle key={i} cx={p.x} cy={p.y} r={hoverIdx === i ? 5 : 2.5} fill="#3b82f6" style={{ transition: "r 0.15s" }} />))}
-                <line x1={PAD} y1={H - PAD} x2={W - PAD} y2={H - PAD} stroke="#e5e7eb" strokeWidth="1" />
+              <svg viewBox={`0 0 ${W} ${H}`} className="w-full cursor-crosshair" style={{ maxHeight: 280 }} onMouseMove={onLineMove} onMouseLeave={() => setHoverIdx(null)}>
+                <defs>
+                  <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#6366f1" stopOpacity="0.30" />
+                    <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
+                  </linearGradient>
+                  <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#6366f1" /><stop offset="100%" stopColor="#3b82f6" />
+                  </linearGradient>
+                </defs>
+                {gridVals.map((v, i) => {
+                  const gy = H - PADY - (v / maxTrend) * (H - 2 * PADY);
+                  return (<g key={i}><line x1={PADX} y1={gy} x2={W - PADX} y2={gy} stroke="#f1f5f9" strokeWidth="1" /><text x={PADX - 6} y={gy + 3} textAnchor="end" style={{ fontSize: 9 }} className="fill-gray-300">{v}</text></g>);
+                })}
+                <path d={areaPath} fill="url(#areaGrad)" style={{ opacity: ready ? 1 : 0, transition: "opacity 0.7s" }} />
+                <path d={linePath} fill="none" stroke="url(#lineGrad)" strokeWidth="2.5" strokeLinecap="round" strokeDasharray={2000} strokeDashoffset={ready ? 0 : 2000} style={{ transition: "stroke-dashoffset 1.1s ease-out" }} />
+                {hp && <line x1={hp.x} y1={PADY - 6} x2={hp.x} y2={H - PADY} stroke="#6366f1" strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />}
+                {pts.map((p, i) => (<circle key={i} cx={p.x} cy={p.y} r={hoverIdx === i ? 5.5 : 0} fill="#fff" stroke="#6366f1" strokeWidth="2.5" style={{ transition: "r 0.15s" }} />))}
+                <line x1={PADX} y1={H - PADY} x2={W - PADX} y2={H - PADY} stroke="#e5e7eb" strokeWidth="1" />
               </svg>
               {hp && (
-                <div className="absolute pointer-events-none bg-gray-900 text-white text-[11px] rounded px-2 py-1 shadow-lg whitespace-nowrap"
-                  style={{ left: `${(hp.x / W) * 100}%`, top: `${(hp.y / H) * 100}%`, transform: "translate(-50%, -130%)" }}>
-                  <div className="font-medium">{hp.count} lead{hp.count !== 1 ? "s" : ""}</div>
+                <div className="absolute pointer-events-none bg-gray-900 text-white text-[11px] rounded-lg px-2.5 py-1.5 shadow-xl whitespace-nowrap"
+                  style={{ left: `${(hp.x / W) * 100}%`, top: `${(hp.y / H) * 100}%`, transform: "translate(-50%, -135%)" }}>
+                  <div className="font-semibold">{hp.count} lead{hp.count !== 1 ? "s" : ""}</div>
                   <div className="text-gray-300">{new Date(hp.date + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</div>
                 </div>
               )}
             </div>
-            <div className="flex justify-between text-[10px] text-gray-400 mt-1 px-1">
-              <span>{trend[0]?.date.slice(5)}</span>
-              <span>{trend[Math.floor(trend.length / 2)]?.date.slice(5)}</span>
-              <span>{trend[trend.length - 1]?.date.slice(5)}</span>
-            </div>
           </div>
 
-          <div className="bg-white border rounded-xl p-5">
+          <div className="bg-white border rounded-2xl p-5 shadow-sm">
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Lead Sources</h3>
             {sourceTotal === 0 ? <p className="text-xs text-gray-400">No data in this period</p> : (
               <div className="flex flex-col items-center">
-                <svg viewBox="0 0 180 180" className="w-40 h-40">
-                  <g transform="rotate(-90 90 90)">
+                <svg viewBox="0 0 180 180" className="w-44 h-44">
+                  <defs>
+                    <filter id="donutShadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.18" /></filter>
                     {donutSegments.map((s, i) => (
-                      <circle key={i} cx="90" cy="90" r={R} fill="none" stroke={s.color} strokeWidth={hoverSrc === s.source ? 26 : 22}
+                      <linearGradient key={i} id={`grad-${s.source}`} x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stopColor={s.light} /><stop offset="100%" stopColor={s.color} />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  <g transform="rotate(-90 90 90)" filter="url(#donutShadow)">
+                    {donutSegments.map((s, i) => (
+                      <circle key={i} cx="90" cy="90" r={R} fill="none" stroke={`url(#grad-${s.source})`} strokeWidth={hoverSrc === s.source ? 24 : 20} strokeLinecap="round"
                         strokeDasharray={`${ready ? s.dash : 0} ${C}`} strokeDashoffset={s.offset} className="cursor-pointer"
                         onMouseEnter={() => setHoverSrc(s.source)} onMouseLeave={() => setHoverSrc(null)} onClick={() => toggleSource(s.source)}
-                        style={{ opacity: hoverSrc && hoverSrc !== s.source ? 0.35 : (sourceFilter && sourceFilter !== s.source ? 0.4 : 1), transition: "stroke-dasharray 0.8s ease-out, opacity 0.2s, stroke-width 0.2s" }} />
+                        style={{ opacity: hoverSrc && hoverSrc !== s.source ? 0.3 : (sourceFilter && sourceFilter !== s.source ? 0.35 : 1), transition: "stroke-dasharray 0.9s ease-out, opacity 0.2s, stroke-width 0.2s" }} />
                     ))}
                   </g>
-                  <text x="90" y="86" textAnchor="middle" className="fill-gray-900" style={{ fontSize: 26, fontWeight: 700 }}>{hoverSrc ? (sourceCounts[hoverSrc] || 0) : sourceTotal}</text>
-                  <text x="90" y="104" textAnchor="middle" className="fill-gray-400" style={{ fontSize: 11 }}>{hoverSrc ? sourceInfo(hoverSrc).label : "leads"}</text>
+                  <text x="90" y="85" textAnchor="middle" className="fill-gray-900" style={{ fontSize: 28, fontWeight: 800 }}>{hoverSrc ? (sourceCounts[hoverSrc] || 0) : sourceTotal}</text>
+                  <text x="90" y="104" textAnchor="middle" className="fill-gray-400" style={{ fontSize: 11 }}>{hoverSrc ? sourceInfo(hoverSrc).label : "total leads"}</text>
                 </svg>
-                <div className="mt-3 w-full space-y-1.5">
+                <div className="mt-4 w-full space-y-1.5">
                   {donutSegments.map((s, i) => (
                     <button key={i} onClick={() => toggleSource(s.source)} onMouseEnter={() => setHoverSrc(s.source)} onMouseLeave={() => setHoverSrc(null)}
-                      className={`w-full flex items-center justify-between text-xs rounded px-1.5 py-1 transition ${sourceFilter === s.source ? "bg-gray-100" : "hover:bg-gray-50"}`}>
-                      <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: s.color }} />{s.label}</span>
-                      <span className="text-gray-500">{s.count} ({Math.round(s.frac * 100)}%)</span>
+                      className={`w-full flex items-center justify-between text-xs rounded-lg px-2 py-1.5 transition ${sourceFilter === s.source ? "bg-gray-100" : "hover:bg-gray-50"}`}>
+                      <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: `linear-gradient(135deg, ${s.light}, ${s.color})` }} />{s.label}</span>
+                      <span className="text-gray-500 font-medium">{s.count} <span className="text-gray-400">({Math.round(s.frac * 100)}%)</span></span>
                     </button>
                   ))}
                 </div>
@@ -374,28 +391,29 @@ export default function DashboardPage() {
 
         {/* Status + Quantity */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-          <div className="bg-white border rounded-xl p-5">
+          <div className="bg-white border rounded-2xl p-5 shadow-sm">
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Pipeline (Status)</h3>
-            <div className="space-y-2.5">
+            <div className="space-y-3">
               {STATUS_ORDER.map((s) => {
                 const c = statusCounts[s] || 0;
+                const col = STATUS_COLOR[s];
                 return (
                   <div key={s} className="flex items-center gap-3" title={`${c} ${s}`}>
                     <span className="w-20 text-xs capitalize text-gray-600">{s}</span>
-                    <Bar pct={(c / maxStatus) * 100} color={STATUS_COLOR[s]} count={c} ready={ready} />
+                    <GradBar pct={(c / maxStatus) * 100} color={col} light={col + "99"} count={c} ready={ready} />
                   </div>
                 );
               })}
             </div>
           </div>
-          <div className="bg-white border rounded-xl p-5">
+          <div className="bg-white border rounded-2xl p-5 shadow-sm">
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Quantity Requested</h3>
             {qtyData.length === 0 ? <p className="text-xs text-gray-400">No quantity data</p> : (
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 {qtyData.map((q) => (
                   <div key={q.qty} className="flex items-center gap-3" title={`${q.qty}: ${q.count}`}>
                     <span className="w-28 text-xs text-gray-600 truncate">{q.qty}</span>
-                    <Bar pct={(q.count / maxQty) * 100} color="#f59e0b" count={q.count} ready={ready} />
+                    <GradBar pct={(q.count / maxQty) * 100} color="#d97706" light="#fcd34d" count={q.count} ready={ready} />
                   </div>
                 ))}
               </div>
@@ -405,36 +423,30 @@ export default function DashboardPage() {
 
         {/* Cities + Campaigns */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="bg-white border rounded-xl p-5">
+          <div className="bg-white border rounded-2xl p-5 shadow-sm">
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Top Cities</h3>
             {topCities.length === 0 ? <p className="text-xs text-gray-400">No city data</p> : (
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 {topCities.map((c) => (
                   <div key={c.city} className="flex items-center gap-3" title={`${c.city}: ${c.count}`}>
                     <span className="w-24 text-xs text-gray-600 truncate">{c.city}</span>
-                    <Bar pct={(c.count / maxCity) * 100} color="#3b82f6" count={c.count} ready={ready} />
+                    <GradBar pct={(c.count / maxCity) * 100} color="#2563eb" light="#93c5fd" count={c.count} ready={ready} />
                   </div>
                 ))}
               </div>
             )}
           </div>
-          <div className="bg-white border rounded-xl p-5">
+          <div className="bg-white border rounded-2xl p-5 shadow-sm">
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Campaign Performance</h3>
             {campaigns.length === 0 ? <p className="text-xs text-gray-400">No campaign data</p> : (
               <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-gray-500 border-b">
-                    <th className="text-left py-1.5 font-medium">Campaign</th>
-                    <th className="text-right py-1.5 font-medium">Leads</th>
-                    <th className="text-right py-1.5 font-medium">Won</th>
-                  </tr>
-                </thead>
+                <thead><tr className="text-gray-500 border-b"><th className="text-left py-2 font-medium">Campaign</th><th className="text-right py-2 font-medium">Leads</th><th className="text-right py-2 font-medium">Won</th></tr></thead>
                 <tbody>
                   {campaigns.map((c) => (
                     <tr key={c.campaign} className="border-b last:border-0 hover:bg-gray-50 transition">
-                      <td className="py-1.5 truncate max-w-[160px]" title={c.campaign}>{c.campaign}</td>
-                      <td className="py-1.5 text-right">{c.total}</td>
-                      <td className="py-1.5 text-right text-green-600">{c.won}</td>
+                      <td className="py-2 truncate max-w-[160px]" title={c.campaign}>{c.campaign}</td>
+                      <td className="py-2 text-right font-medium">{c.total}</td>
+                      <td className="py-2 text-right text-green-600 font-medium">{c.won}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -443,17 +455,25 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <p className="text-center text-[11px] text-gray-400 mt-6">Showing {range.label.toLowerCase()} - {total} leads - {leads.length} total in system</p>
+        <p className="text-center text-[11px] text-gray-400 mt-6">Showing {range.label.toLowerCase()} · {total} leads · {leads.length} total in system</p>
       </div>
     </div>
   );
 }
 
-function KpiCard({ label, accent, children }: { label: string; accent: string; children: React.ReactNode }) {
+function KpiCard({ label, icon, iconBg, accent, delta, children }: { label: string; icon: string; iconBg: string; accent: string; delta?: number | null; children: React.ReactNode }) {
   return (
-    <div className="bg-white border rounded-xl p-4 transition hover:shadow-md hover:-translate-y-0.5">
-      <div className="text-xs text-gray-500 mb-1">{label}</div>
+    <div className="bg-white border rounded-2xl p-4 shadow-sm transition hover:shadow-md hover:-translate-y-0.5">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs text-gray-500">{label}</span>
+        <span className="w-8 h-8 rounded-lg flex items-center justify-center text-base" style={{ background: iconBg }}>{icon}</span>
+      </div>
       <div className={`text-2xl font-bold ${accent}`}>{children}</div>
+      {delta !== undefined && delta !== null && (
+        <div className={`text-[11px] mt-1 font-medium ${delta >= 0 ? "text-green-600" : "text-red-500"}`}>
+          {delta >= 0 ? "▲" : "▼"} {Math.abs(delta)}% vs prev period
+        </div>
+      )}
     </div>
   );
 }
