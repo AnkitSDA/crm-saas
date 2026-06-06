@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 
@@ -52,34 +52,63 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 const BIG = new Date(8640000000000000);
-
 interface Period { start: Date; end: Date; label: string; isRange: boolean; days: number; }
 
 function resolvePeriod(period: string): Period {
   const now = new Date();
-  if (period === "this") {
-    return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: new Date(now.getFullYear(), now.getMonth() + 1, 1), label: "This Month", isRange: true, days: 0 };
-  }
-  if (period === "last") {
-    return { start: new Date(now.getFullYear(), now.getMonth() - 1, 1), end: new Date(now.getFullYear(), now.getMonth(), 1), label: "Last Month", isRange: true, days: 0 };
-  }
+  if (period === "this") return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: new Date(now.getFullYear(), now.getMonth() + 1, 1), label: "This Month", isRange: true, days: 0 };
+  if (period === "last") return { start: new Date(now.getFullYear(), now.getMonth() - 1, 1), end: new Date(now.getFullYear(), now.getMonth(), 1), label: "Last Month", isRange: true, days: 0 };
   if (/^\d{4}-\d{2}$/.test(period)) {
     const [y, m] = period.split("-").map(Number);
-    const start = new Date(y, m - 1, 1);
-    return { start, end: new Date(y, m, 1), label: formatMonth(period), isRange: true, days: 0 };
+    return { start: new Date(y, m - 1, 1), end: new Date(y, m, 1), label: formatMonth(period), isRange: true, days: 0 };
   }
   const days = period === "7d" ? 7 : period === "90d" ? 90 : period === "all" ? 3650 : 30;
   const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - days + 1);
   return { start, end: BIG, label: period === "all" ? "All time" : `Last ${days} days`, isRange: false, days };
 }
 
+function CountUp({ value, decimals = 0, suffix = "" }: { value: number; decimals?: number; suffix?: string }) {
+  const [display, setDisplay] = useState(value);
+  const prev = useRef(value);
+  useEffect(() => {
+    const start = prev.current, end = value, dur = 550, t0 = performance.now();
+    let raf = 0;
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - t0) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setDisplay(start + (end - start) * eased);
+      if (p < 1) raf = requestAnimationFrame(tick); else prev.current = end;
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return <>{display.toFixed(decimals)}{suffix}</>;
+}
+
+function Bar({ pct, color, count, ready }: { pct: number; color: string; count: number; ready: boolean }) {
+  return (
+    <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+      <div
+        className="h-5 rounded-full flex items-center justify-end pr-2 transition-all duration-700 ease-out hover:brightness-110"
+        style={{ width: `${ready ? pct : 0}%`, background: color, minWidth: count > 0 ? 24 : 0 }}
+      >
+        {count > 0 && <span className="text-[10px] text-white font-medium">{count}</span>}
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [ready, setReady] = useState(false);
   const [period, setPeriod] = useState("this");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [hoverSrc, setHoverSrc] = useState<string | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -87,7 +116,7 @@ export default function DashboardPage() {
     api.get("/leads/?limit=500")
       .then((r) => setLeads(r.data.items || []))
       .catch(() => router.push("/login"))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setTimeout(() => setReady(true), 60); });
   }, []);
 
   if (loading)
@@ -110,10 +139,9 @@ export default function DashboardPage() {
     sel = resolvePeriod(period);
   }
 
-  const inRange = leads.filter((l) => {
-    const d = new Date(l.created_at);
-    return d >= sel.start && d < sel.end;
-  });
+  // periodLeads -> source donut (always full); filtered -> everything else (respects source cross-filter)
+  const periodLeads = leads.filter((l) => { const d = new Date(l.created_at); return d >= sel.start && d < sel.end; });
+  const filtered = sourceFilter ? periodLeads.filter((l) => l.source === sourceFilter) : periodLeads;
 
   let trendRaw: string[] = [];
   const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0);
@@ -127,49 +155,53 @@ export default function DashboardPage() {
   }
   const trendDates = trendRaw.length > 62 ? trendRaw.slice(-62) : trendRaw;
 
-  const total = inRange.length;
-  const monthForKpi = sel.isRange ? inRange.length : inRange.filter((l) => monthKey(new Date(l.created_at)) === thisMk).length;
-  const won = inRange.filter((l) => l.status === "won").length;
+  const total = filtered.length;
+  const monthForKpi = sel.isRange ? filtered.length : filtered.filter((l) => monthKey(new Date(l.created_at)) === thisMk).length;
+  const won = filtered.filter((l) => l.status === "won").length;
   const convRate = total > 0 ? Math.round((won / total) * 100) : 0;
   const daysSpan = Math.max(1, trendDates.length);
-  const avgPerDay = (total / daysSpan).toFixed(1);
+  const avgPerDay = total / daysSpan;
 
+  // Source donut from periodLeads
   const sourceCounts: Record<string, number> = {};
-  inRange.forEach((l) => { sourceCounts[l.source] = (sourceCounts[l.source] || 0) + 1; });
+  periodLeads.forEach((l) => { sourceCounts[l.source] = (sourceCounts[l.source] || 0) + 1; });
+  const sourceTotal = periodLeads.length;
   const sourceData = Object.entries(sourceCounts).map(([s, c]) => ({ source: s, count: c, ...sourceInfo(s) })).sort((a, b) => b.count - a.count);
 
   const statusCounts: Record<string, number> = {};
-  inRange.forEach((l) => { statusCounts[l.status] = (statusCounts[l.status] || 0) + 1; });
+  filtered.forEach((l) => { statusCounts[l.status] = (statusCounts[l.status] || 0) + 1; });
   const maxStatus = Math.max(1, ...STATUS_ORDER.map((s) => statusCounts[s] || 0));
 
   const cityCounts: Record<string, number> = {};
-  inRange.forEach((l) => { const city = parseNotes(l.notes).city; if (city) { const k = city.trim(); cityCounts[k] = (cityCounts[k] || 0) + 1; } });
+  filtered.forEach((l) => { const city = parseNotes(l.notes).city; if (city) { const k = city.trim(); cityCounts[k] = (cityCounts[k] || 0) + 1; } });
   const topCities = Object.entries(cityCounts).map(([c, n]) => ({ city: c, count: n })).sort((a, b) => b.count - a.count).slice(0, 8);
   const maxCity = Math.max(1, ...topCities.map((c) => c.count));
 
   const qtyCounts: Record<string, number> = {};
-  inRange.forEach((l) => { const p = parseNotes(l.notes); const q = p.quantity || p.message || p.requirement; if (q) { const k = q.trim(); qtyCounts[k] = (qtyCounts[k] || 0) + 1; } });
+  filtered.forEach((l) => { const p = parseNotes(l.notes); const q = p.quantity || p.message || p.requirement; if (q) { const k = q.trim(); qtyCounts[k] = (qtyCounts[k] || 0) + 1; } });
   const qtyData = Object.entries(qtyCounts).map(([q, n]) => ({ qty: q, count: n })).sort((a, b) => b.count - a.count).slice(0, 6);
   const maxQty = Math.max(1, ...qtyData.map((q) => q.count));
 
   const dayMap: Record<string, number> = {};
   trendDates.forEach((d) => { dayMap[d] = 0; });
-  inRange.forEach((l) => { const k = dayKey(new Date(l.created_at)); if (k in dayMap) dayMap[k]++; });
+  filtered.forEach((l) => { const k = dayKey(new Date(l.created_at)); if (k in dayMap) dayMap[k]++; });
   const trend = trendDates.map((date) => ({ date, count: dayMap[date] }));
   const maxTrend = Math.max(1, ...trend.map((t) => t.count));
 
   const campMap: Record<string, { total: number; won: number }> = {};
-  inRange.forEach((l) => { const c = l.utm_campaign; if (!c) return; if (!campMap[c]) campMap[c] = { total: 0, won: 0 }; campMap[c].total++; if (l.status === "won") campMap[c].won++; });
+  filtered.forEach((l) => { const c = l.utm_campaign; if (!c) return; if (!campMap[c]) campMap[c] = { total: 0, won: 0 }; campMap[c].total++; if (l.status === "won") campMap[c].won++; });
   const campaigns = Object.entries(campMap).map(([c, v]) => ({ campaign: c, ...v })).sort((a, b) => b.total - a.total).slice(0, 6);
 
+  // Donut geometry
   const R = 70, C = 2 * Math.PI * R;
   let cumulative = 0;
   const donutSegments = sourceData.map((s) => {
-    const frac = total > 0 ? s.count / total : 0;
+    const frac = sourceTotal > 0 ? s.count / sourceTotal : 0;
     const seg = { ...s, frac, dash: frac * C, offset: -cumulative * C };
     cumulative += frac; return seg;
   });
 
+  // Line geometry
   const W = 640, H = 200, PAD = 24;
   const pts = trend.map((t, i) => {
     const x = PAD + (i * (W - 2 * PAD)) / Math.max(1, trend.length - 1);
@@ -178,8 +210,16 @@ export default function DashboardPage() {
   });
   const polyline = pts.map((p) => `${p.x},${p.y}`).join(" ");
   const areaPath = pts.length ? `M ${PAD},${H - PAD} L ${pts.map((p) => `${p.x},${p.y}`).join(" L ")} L ${W - PAD},${H - PAD} Z` : "";
+  const hp = hoverIdx != null && pts[hoverIdx] ? pts[hoverIdx] : null;
 
   function clearCustom() { setCustomStart(""); setCustomEnd(""); }
+  function toggleSource(s: string) { setSourceFilter((cur) => (cur === s ? "" : s)); }
+  function onLineMove(e: React.MouseEvent<SVGSVGElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const f = (e.clientX - rect.left) / rect.width;
+    const idx = Math.max(0, Math.min(trend.length - 1, Math.round(f * (trend.length - 1))));
+    setHoverIdx(idx);
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -193,14 +233,12 @@ export default function DashboardPage() {
       </div>
 
       <div className="px-8 py-6 max-w-[1400px] mx-auto">
-        <div className="bg-white border rounded-xl p-3 mb-5 flex flex-wrap items-center gap-x-4 gap-y-2">
+        {/* Period selector */}
+        <div className="bg-white border rounded-xl p-3 mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-500">Quick:</span>
-            <select
-              value={usingCustom ? "" : period}
-              onChange={(e) => { clearCustom(); setPeriod(e.target.value); }}
-              className={`border rounded-lg px-3 py-1.5 text-sm bg-white font-medium ${usingCustom ? "text-gray-400" : ""}`}
-            >
+            <select value={usingCustom ? "" : period} onChange={(e) => { clearCustom(); setPeriod(e.target.value); }}
+              className={`border rounded-lg px-3 py-1.5 text-sm bg-white font-medium ${usingCustom ? "text-gray-400" : ""}`}>
               {usingCustom && <option value="">- custom -</option>}
               <option value="this">This Month</option>
               <option value="last">Last Month</option>
@@ -215,42 +253,65 @@ export default function DashboardPage() {
               )}
             </select>
           </div>
-
           <div className="h-5 w-px bg-gray-200 hidden sm:block" />
-
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm text-gray-500">Calendar:</span>
-            <input type="date" value={customStart} max={customEnd || undefined}
-              onChange={(e) => setCustomStart(e.target.value)}
-              className="border rounded-lg px-2 py-1.5 text-sm" />
+            <input type="date" value={customStart} max={customEnd || undefined} onChange={(e) => setCustomStart(e.target.value)} className="border rounded-lg px-2 py-1.5 text-sm" />
             <span className="text-gray-400 text-sm">to</span>
-            <input type="date" value={customEnd} min={customStart || undefined}
-              onChange={(e) => setCustomEnd(e.target.value)}
-              className="border rounded-lg px-2 py-1.5 text-sm" />
-            {usingCustom && (
-              <button onClick={clearCustom} className="text-xs text-red-600 hover:underline ml-1">Clear</button>
-            )}
+            <input type="date" value={customEnd} min={customStart || undefined} onChange={(e) => setCustomEnd(e.target.value)} className="border rounded-lg px-2 py-1.5 text-sm" />
+            {usingCustom && <button onClick={clearCustom} className="text-xs text-red-600 hover:underline ml-1">Clear</button>}
           </div>
-
           <span className="text-sm text-gray-400 ml-auto">Showing: <span className="text-gray-700 font-medium">{sel.label}</span></span>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <KpiCard label="Total Leads" value={total} accent="text-gray-900" />
-          <KpiCard label={sel.isRange ? "In Period" : "This Month"} value={monthForKpi} accent="text-blue-600" />
-          <KpiCard label="Won" value={`${won} (${convRate}%)`} accent="text-green-600" />
-          <KpiCard label="Avg / Day" value={avgPerDay} accent="text-amber-600" />
+        {/* Source cross-filter chips */}
+        <div className="flex flex-wrap items-center gap-2 mb-5">
+          <span className="text-xs text-gray-400">Filter source:</span>
+          <button onClick={() => setSourceFilter("")}
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition ${sourceFilter === "" ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"}`}>
+            All sources
+          </button>
+          {sourceData.map((s) => (
+            <button key={s.source} onClick={() => toggleSource(s.source)}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition ${sourceFilter === s.source ? "text-white border-transparent" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"}`}
+              style={sourceFilter === s.source ? { background: s.color } : {}}>
+              <span className="w-2 h-2 rounded-full" style={{ background: sourceFilter === s.source ? "#fff" : s.color }} />
+              {s.label}
+            </button>
+          ))}
+          {sourceFilter && <span className="text-xs text-gray-400">· {total} leads</span>}
         </div>
 
+        {/* KPI cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <KpiCard label="Total Leads" accent="text-gray-900"><CountUp value={total} /></KpiCard>
+          <KpiCard label={sel.isRange ? "In Period" : "This Month"} accent="text-blue-600"><CountUp value={monthForKpi} /></KpiCard>
+          <KpiCard label="Won" accent="text-green-600"><CountUp value={won} suffix={` (${convRate}%)`} /></KpiCard>
+          <KpiCard label="Avg / Day" accent="text-amber-600"><CountUp value={avgPerDay} decimals={1} /></KpiCard>
+        </div>
+
+        {/* Trend + Donut */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
           <div className="lg:col-span-2 bg-white border rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">Leads Trend - {sel.label}</h3>
-            <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 240 }}>
-              <path d={areaPath} fill="#3b82f6" opacity="0.08" />
-              <polyline points={polyline} fill="none" stroke="#3b82f6" strokeWidth="2" />
-              {pts.map((p, i) => (<circle key={i} cx={p.x} cy={p.y} r="3" fill="#3b82f6" />))}
-              <line x1={PAD} y1={H - PAD} x2={W - PAD} y2={H - PAD} stroke="#e5e7eb" strokeWidth="1" />
-            </svg>
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">Leads Trend - {sel.label}{sourceFilter ? ` (${sourceInfo(sourceFilter).label})` : ""}</h3>
+            <div className="relative">
+              <svg viewBox={`0 0 ${W} ${H}`} className="w-full cursor-crosshair" style={{ maxHeight: 240 }}
+                onMouseMove={onLineMove} onMouseLeave={() => setHoverIdx(null)}>
+                <path d={areaPath} fill="#3b82f6" style={{ opacity: ready ? 0.08 : 0, transition: "opacity 0.6s" }} />
+                <polyline points={polyline} fill="none" stroke="#3b82f6" strokeWidth="2"
+                  strokeDasharray={1400} strokeDashoffset={ready ? 0 : 1400} style={{ transition: "stroke-dashoffset 1s ease-out" }} />
+                {hp && <line x1={hp.x} y1={PAD - 6} x2={hp.x} y2={H - PAD} stroke="#3b82f6" strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />}
+                {pts.map((p, i) => (<circle key={i} cx={p.x} cy={p.y} r={hoverIdx === i ? 5 : 2.5} fill="#3b82f6" style={{ transition: "r 0.15s" }} />))}
+                <line x1={PAD} y1={H - PAD} x2={W - PAD} y2={H - PAD} stroke="#e5e7eb" strokeWidth="1" />
+              </svg>
+              {hp && (
+                <div className="absolute pointer-events-none bg-gray-900 text-white text-[11px] rounded px-2 py-1 shadow-lg whitespace-nowrap"
+                  style={{ left: `${(hp.x / W) * 100}%`, top: `${(hp.y / H) * 100}%`, transform: "translate(-50%, -130%)" }}>
+                  <div className="font-medium">{hp.count} lead{hp.count !== 1 ? "s" : ""}</div>
+                  <div className="text-gray-300">{new Date(hp.date + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</div>
+                </div>
+              )}
+            </div>
             <div className="flex justify-between text-[10px] text-gray-400 mt-1 px-1">
               <span>{trend[0]?.date.slice(5)}</span>
               <span>{trend[Math.floor(trend.length / 2)]?.date.slice(5)}</span>
@@ -260,30 +321,43 @@ export default function DashboardPage() {
 
           <div className="bg-white border rounded-xl p-5">
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Lead Sources</h3>
-            {total === 0 ? <p className="text-xs text-gray-400">No data in this period</p> : (
+            {sourceTotal === 0 ? <p className="text-xs text-gray-400">No data in this period</p> : (
               <div className="flex flex-col items-center">
                 <svg viewBox="0 0 180 180" className="w-40 h-40">
                   <g transform="rotate(-90 90 90)">
                     {donutSegments.map((s, i) => (
-                      <circle key={i} cx="90" cy="90" r={R} fill="none" stroke={s.color} strokeWidth="22" strokeDasharray={`${s.dash} ${C}`} strokeDashoffset={s.offset} />
+                      <circle key={i} cx="90" cy="90" r={R} fill="none" stroke={s.color} strokeWidth={hoverSrc === s.source ? 26 : 22}
+                        strokeDasharray={`${ready ? s.dash : 0} ${C}`} strokeDashoffset={s.offset}
+                        className="cursor-pointer"
+                        onMouseEnter={() => setHoverSrc(s.source)} onMouseLeave={() => setHoverSrc(null)}
+                        onClick={() => toggleSource(s.source)}
+                        style={{ opacity: hoverSrc && hoverSrc !== s.source ? 0.35 : (sourceFilter && sourceFilter !== s.source ? 0.4 : 1), transition: "stroke-dasharray 0.8s ease-out, opacity 0.2s, stroke-width 0.2s" }} />
                     ))}
                   </g>
-                  <text x="90" y="86" textAnchor="middle" className="fill-gray-900" style={{ fontSize: 26, fontWeight: 700 }}>{total}</text>
-                  <text x="90" y="104" textAnchor="middle" className="fill-gray-400" style={{ fontSize: 11 }}>leads</text>
+                  <text x="90" y="86" textAnchor="middle" className="fill-gray-900" style={{ fontSize: 26, fontWeight: 700 }}>
+                    {hoverSrc ? (sourceCounts[hoverSrc] || 0) : sourceTotal}
+                  </text>
+                  <text x="90" y="104" textAnchor="middle" className="fill-gray-400" style={{ fontSize: 11 }}>
+                    {hoverSrc ? sourceInfo(hoverSrc).label : "leads"}
+                  </text>
                 </svg>
                 <div className="mt-3 w-full space-y-1.5">
                   {donutSegments.map((s, i) => (
-                    <div key={i} className="flex items-center justify-between text-xs">
+                    <button key={i} onClick={() => toggleSource(s.source)}
+                      onMouseEnter={() => setHoverSrc(s.source)} onMouseLeave={() => setHoverSrc(null)}
+                      className={`w-full flex items-center justify-between text-xs rounded px-1.5 py-1 transition ${sourceFilter === s.source ? "bg-gray-100" : "hover:bg-gray-50"}`}>
                       <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: s.color }} />{s.label}</span>
                       <span className="text-gray-500">{s.count} ({Math.round(s.frac * 100)}%)</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
+                {sourceFilter && <p className="text-[10px] text-gray-400 mt-2">Click again to clear filter</p>}
               </div>
             )}
           </div>
         </div>
 
+        {/* Status + Quantity */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
           <div className="bg-white border rounded-xl p-5">
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Pipeline (Status)</h3>
@@ -291,13 +365,9 @@ export default function DashboardPage() {
               {STATUS_ORDER.map((s) => {
                 const c = statusCounts[s] || 0;
                 return (
-                  <div key={s} className="flex items-center gap-3">
+                  <div key={s} className="flex items-center gap-3" title={`${c} ${s}`}>
                     <span className="w-20 text-xs capitalize text-gray-600">{s}</span>
-                    <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
-                      <div className="h-5 rounded-full flex items-center justify-end pr-2" style={{ width: `${(c / maxStatus) * 100}%`, background: STATUS_COLOR[s], minWidth: c > 0 ? 24 : 0 }}>
-                        {c > 0 && <span className="text-[10px] text-white font-medium">{c}</span>}
-                      </div>
-                    </div>
+                    <Bar pct={(c / maxStatus) * 100} color={STATUS_COLOR[s]} count={c} ready={ready} />
                   </div>
                 );
               })}
@@ -309,13 +379,9 @@ export default function DashboardPage() {
             {qtyData.length === 0 ? <p className="text-xs text-gray-400">No quantity data</p> : (
               <div className="space-y-2.5">
                 {qtyData.map((q) => (
-                  <div key={q.qty} className="flex items-center gap-3">
-                    <span className="w-28 text-xs text-gray-600 truncate" title={q.qty}>{q.qty}</span>
-                    <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
-                      <div className="h-5 rounded-full bg-amber-500 flex items-center justify-end pr-2" style={{ width: `${(q.count / maxQty) * 100}%`, minWidth: 24 }}>
-                        <span className="text-[10px] text-white font-medium">{q.count}</span>
-                      </div>
-                    </div>
+                  <div key={q.qty} className="flex items-center gap-3" title={`${q.qty}: ${q.count}`}>
+                    <span className="w-28 text-xs text-gray-600 truncate">{q.qty}</span>
+                    <Bar pct={(q.count / maxQty) * 100} color="#f59e0b" count={q.count} ready={ready} />
                   </div>
                 ))}
               </div>
@@ -323,19 +389,16 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* Cities + Campaigns */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="bg-white border rounded-xl p-5">
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Top Cities</h3>
             {topCities.length === 0 ? <p className="text-xs text-gray-400">No city data</p> : (
               <div className="space-y-2.5">
                 {topCities.map((c) => (
-                  <div key={c.city} className="flex items-center gap-3">
-                    <span className="w-24 text-xs text-gray-600 truncate" title={c.city}>{c.city}</span>
-                    <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
-                      <div className="h-5 rounded-full bg-blue-500 flex items-center justify-end pr-2" style={{ width: `${(c.count / maxCity) * 100}%`, minWidth: 24 }}>
-                        <span className="text-[10px] text-white font-medium">{c.count}</span>
-                      </div>
-                    </div>
+                  <div key={c.city} className="flex items-center gap-3" title={`${c.city}: ${c.count}`}>
+                    <span className="w-24 text-xs text-gray-600 truncate">{c.city}</span>
+                    <Bar pct={(c.count / maxCity) * 100} color="#3b82f6" count={c.count} ready={ready} />
                   </div>
                 ))}
               </div>
@@ -355,7 +418,7 @@ export default function DashboardPage() {
                 </thead>
                 <tbody>
                   {campaigns.map((c) => (
-                    <tr key={c.campaign} className="border-b last:border-0">
+                    <tr key={c.campaign} className="border-b last:border-0 hover:bg-gray-50 transition">
                       <td className="py-1.5 truncate max-w-[160px]" title={c.campaign}>{c.campaign}</td>
                       <td className="py-1.5 text-right">{c.total}</td>
                       <td className="py-1.5 text-right text-green-600">{c.won}</td>
@@ -375,11 +438,11 @@ export default function DashboardPage() {
   );
 }
 
-function KpiCard({ label, value, accent }: { label: string; value: string | number; accent: string }) {
+function KpiCard({ label, accent, children }: { label: string; accent: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white border rounded-xl p-4">
+    <div className="bg-white border rounded-xl p-4 transition hover:shadow-md hover:-translate-y-0.5">
       <div className="text-xs text-gray-500 mb-1">{label}</div>
-      <div className={`text-2xl font-bold ${accent}`}>{value}</div>
+      <div className={`text-2xl font-bold ${accent}`}>{children}</div>
     </div>
   );
 }
