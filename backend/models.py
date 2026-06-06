@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, Text, DateTime, Index
+from sqlalchemy import Column, String, Boolean, Text, DateTime, Float, Index
 from sqlalchemy.sql import func
 from database import Base
 import uuid
@@ -11,7 +11,6 @@ def gen_api_key():
     return "crm_" + secrets.token_urlsafe(32)
 
 def normalize_phone(phone: str | None) -> str | None:
-    """Normalize an Indian phone number for duplicate detection."""
     if not phone:
         return None
     digits = "".join(c for c in phone if c.isdigit())
@@ -26,7 +25,6 @@ def normalize_phone(phone: str | None) -> str | None:
 
 class Tenant(Base):
     __tablename__ = "tenants"
-
     id         = Column(String(36), primary_key=True, default=gen_uuid)
     name       = Column(String(255), nullable=False)
     slug       = Column(String(100), unique=True, nullable=False)
@@ -37,7 +35,6 @@ class Tenant(Base):
 
 class User(Base):
     __tablename__ = "users"
-
     id            = Column(String(36), primary_key=True, default=gen_uuid)
     tenant_id     = Column(String(36), nullable=True, index=True)
     email         = Column(String(255), unique=True, nullable=False)
@@ -49,7 +46,6 @@ class User(Base):
 
 class Lead(Base):
     __tablename__ = "leads"
-
     id          = Column(String(36), primary_key=True, default=gen_uuid)
     tenant_id   = Column(String(36), nullable=False, index=True)
     name        = Column(String(255))
@@ -59,11 +55,9 @@ class Lead(Base):
     status      = Column(String(50), default="new", index=True)
     notes       = Column(Text)
     assigned_to = Column(String(36), nullable=True, index=True)
-
-    # Follow-up reminder
     follow_up_at = Column(DateTime, nullable=True, index=True)
+    deal_value  = Column(Float, nullable=True)
 
-    # Marketing attribution
     utm_source   = Column(String(255), nullable=True, index=True)
     utm_medium   = Column(String(255), nullable=True)
     utm_campaign = Column(String(255), nullable=True, index=True)
@@ -81,15 +75,25 @@ Index("ix_leads_tenant_created", Lead.tenant_id, Lead.created_at)
 
 
 class LeadActivity(Base):
-    """Timestamped notes / activity log on a lead (calls, messages, notes)."""
     __tablename__ = "lead_activities"
-
     id            = Column(String(36), primary_key=True, default=gen_uuid)
     lead_id       = Column(String(36), nullable=False, index=True)
     tenant_id     = Column(String(36), nullable=False, index=True)
     note          = Column(Text)
-    activity_type = Column(String(50), default="note")  # note | call | whatsapp | email | status
+    activity_type = Column(String(50), default="note")
     created_by    = Column(String(255), nullable=True)
     created_at    = Column(DateTime, server_default=func.now())
 
 Index("ix_activities_lead_created", LeadActivity.lead_id, LeadActivity.created_at)
+
+
+class AdSpend(Base):
+    __tablename__ = "ad_spends"
+    id         = Column(String(36), primary_key=True, default=gen_uuid)
+    tenant_id  = Column(String(36), nullable=False, index=True)
+    month      = Column(String(7), nullable=False)   # YYYY-MM
+    source     = Column(String(50), nullable=False)  # google_ads | meta_ads | website | all
+    amount     = Column(Float, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+
+Index("ix_spends_tenant_month", AdSpend.tenant_id, AdSpend.month)
