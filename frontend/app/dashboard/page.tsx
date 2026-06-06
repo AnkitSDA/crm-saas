@@ -4,14 +4,10 @@ import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 
 interface Lead {
-  id: string;
-  name: string | null;
-  source: string;
-  status: string;
-  notes: string | null;
-  utm_campaign: string | null;
-  created_at: string;
+  id: string; name: string | null; source: string; status: string;
+  notes: string | null; utm_campaign: string | null; created_at: string;
 }
+interface RangeSel { start: Date; end: Date; label: string; }
 
 function parseNotes(notes: string | null): Record<string, string> {
   const result: Record<string, string> = {};
@@ -24,17 +20,11 @@ function parseNotes(notes: string | null): Record<string, string> {
   while ((m = regex.exec(text)) !== null) result[m[1].toLowerCase()] = m[2].trim();
   return result;
 }
-
-function dayKey(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function monthKey(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-function formatMonth(mk: string) {
-  const [y, m] = mk.split("-").map(Number);
-  return new Date(y, m - 1, 1).toLocaleString("en-US", { month: "long", year: "numeric" });
-}
+function dayKey(d: Date) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+function addDays(d: Date, n: number) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function sameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+function fmtShort(d: Date) { return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }); }
 
 const SOURCE_META: Record<string, { label: string; color: string }> = {
   google_ads: { label: "Google Ads", color: "#10b981" },
@@ -42,30 +32,11 @@ const SOURCE_META: Record<string, { label: string; color: string }> = {
   website:    { label: "Website",    color: "#64748b" },
   manual:     { label: "Manual",     color: "#f59e0b" },
 };
-function sourceInfo(s: string) {
-  return SOURCE_META[s] || { label: s.replace("_", " "), color: "#a3a3a3" };
-}
-
+function sourceInfo(s: string) { return SOURCE_META[s] || { label: s.replace("_", " "), color: "#a3a3a3" }; }
 const STATUS_ORDER = ["new", "contacted", "qualified", "won", "lost"];
-const STATUS_COLOR: Record<string, string> = {
-  new: "#3b82f6", contacted: "#eab308", qualified: "#a855f7", won: "#22c55e", lost: "#ef4444",
-};
-
-const BIG = new Date(8640000000000000);
-interface Period { start: Date; end: Date; label: string; isRange: boolean; days: number; }
-
-function resolvePeriod(period: string): Period {
-  const now = new Date();
-  if (period === "this") return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: new Date(now.getFullYear(), now.getMonth() + 1, 1), label: "This Month", isRange: true, days: 0 };
-  if (period === "last") return { start: new Date(now.getFullYear(), now.getMonth() - 1, 1), end: new Date(now.getFullYear(), now.getMonth(), 1), label: "Last Month", isRange: true, days: 0 };
-  if (/^\d{4}-\d{2}$/.test(period)) {
-    const [y, m] = period.split("-").map(Number);
-    return { start: new Date(y, m - 1, 1), end: new Date(y, m, 1), label: formatMonth(period), isRange: true, days: 0 };
-  }
-  const days = period === "7d" ? 7 : period === "90d" ? 90 : period === "all" ? 3650 : 30;
-  const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - days + 1);
-  return { start, end: BIG, label: period === "all" ? "All time" : `Last ${days} days`, isRange: false, days };
-}
+const STATUS_COLOR: Record<string, string> = { new: "#3b82f6", contacted: "#eab308", qualified: "#a855f7", won: "#22c55e", lost: "#ef4444" };
+const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 function CountUp({ value, decimals = 0, suffix = "" }: { value: number; decimals?: number; suffix?: string }) {
   const [display, setDisplay] = useState(value);
@@ -88,12 +59,122 @@ function CountUp({ value, decimals = 0, suffix = "" }: { value: number; decimals
 function Bar({ pct, color, count, ready }: { pct: number; color: string; count: number; ready: boolean }) {
   return (
     <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
-      <div
-        className="h-5 rounded-full flex items-center justify-end pr-2 transition-all duration-700 ease-out hover:brightness-110"
-        style={{ width: `${ready ? pct : 0}%`, background: color, minWidth: count > 0 ? 24 : 0 }}
-      >
+      <div className="h-5 rounded-full flex items-center justify-end pr-2 transition-all duration-700 ease-out hover:brightness-110"
+        style={{ width: `${ready ? pct : 0}%`, background: color, minWidth: count > 0 ? 24 : 0 }}>
         {count > 0 && <span className="text-[10px] text-white font-medium">{count}</span>}
       </div>
+    </div>
+  );
+}
+
+function DateRangePicker({ range, onChange }: { range: RangeSel; onChange: (r: RangeSel) => void }) {
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState(() => new Date(range.start.getFullYear(), range.start.getMonth(), 1));
+  const [tStart, setTStart] = useState<Date | null>(null);
+  const [tEnd, setTEnd] = useState<Date | null>(null);
+  const [hover, setHover] = useState<Date | null>(null);
+  const today = startOfDay(new Date());
+
+  function openPicker() {
+    setTStart(null); setTEnd(null); setHover(null);
+    setView(new Date(range.start.getFullYear(), range.start.getMonth(), 1));
+    setOpen(true);
+  }
+  function applyRange(s: Date, eInclusive: Date, label?: string) {
+    const start = startOfDay(s);
+    const end = addDays(startOfDay(eInclusive), 1);
+    onChange({ start, end, label: label || `${fmtShort(start)} - ${fmtShort(startOfDay(eInclusive))}` });
+    setOpen(false);
+  }
+  function pickPreset(id: string) {
+    const n = new Date();
+    if (id === "today") applyRange(today, today, "Today");
+    else if (id === "yesterday") { const y = addDays(today, -1); applyRange(y, y, "Yesterday"); }
+    else if (id === "7d") applyRange(addDays(today, -6), today, "Last 7 days");
+    else if (id === "14d") applyRange(addDays(today, -13), today, "Last 14 days");
+    else if (id === "30d") applyRange(addDays(today, -29), today, "Last 30 days");
+    else if (id === "90d") applyRange(addDays(today, -89), today, "Last 90 days");
+    else if (id === "this") applyRange(new Date(n.getFullYear(), n.getMonth(), 1), today, "This Month");
+    else if (id === "last") applyRange(new Date(n.getFullYear(), n.getMonth() - 1, 1), new Date(n.getFullYear(), n.getMonth(), 0), "Last Month");
+    else if (id === "all") { onChange({ start: new Date(2000, 0, 1), end: addDays(today, 1), label: "All time" }); setOpen(false); }
+  }
+  function clickDay(d: Date) {
+    if (d > today) return;
+    if (!tStart || (tStart && tEnd)) { setTStart(d); setTEnd(null); return; }
+    if (d < tStart) { setTStart(d); return; }
+    setTEnd(d); applyRange(tStart, d);
+  }
+
+  const presets = [
+    { id: "today", label: "Today" }, { id: "yesterday", label: "Yesterday" },
+    { id: "7d", label: "Last 7 days" }, { id: "14d", label: "Last 14 days" },
+    { id: "30d", label: "Last 30 days" }, { id: "90d", label: "Last 90 days" },
+    { id: "this", label: "This month" }, { id: "last", label: "Last month" },
+    { id: "all", label: "All time" },
+  ];
+
+  const y = view.getFullYear(), mo = view.getMonth();
+  const startWd = new Date(y, mo, 1).getDay();
+  const dim = new Date(y, mo + 1, 0).getDate();
+  const cells: (Date | null)[] = [];
+  for (let i = 0; i < startWd; i++) cells.push(null);
+  for (let dn = 1; dn <= dim; dn++) cells.push(new Date(y, mo, dn));
+  const effEnd = tEnd || hover;
+
+  function inR(d: Date) {
+    if (!tStart || !effEnd) return false;
+    const lo = tStart < effEnd ? tStart : effEnd, hi = tStart < effEnd ? effEnd : tStart;
+    return d > lo && d < hi;
+  }
+
+  return (
+    <div className="relative inline-block">
+      <button onClick={openPicker} className="flex items-center gap-2 border rounded-lg px-3 py-1.5 text-sm bg-white font-medium hover:border-gray-400 transition">
+        <span>📅</span><span>{range.label}</span><span className="text-gray-400">▾</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute z-50 mt-2 bg-white border rounded-xl shadow-xl flex overflow-hidden" style={{ minWidth: 480 }}>
+            <div className="w-40 border-r py-2 max-h-[340px] overflow-y-auto">
+              {presets.map((p) => (
+                <button key={p.id} onClick={() => pickPreset(p.id)}
+                  className={`w-full text-left px-4 py-2 text-sm hover:bg-blue-50 transition ${range.label === p.label ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700"}`}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div className="p-4" style={{ width: 320 }}>
+              <div className="flex items-center justify-between mb-3">
+                <button onClick={() => setView(new Date(y, mo - 1, 1))} className="w-7 h-7 rounded hover:bg-gray-100 text-gray-600">‹</button>
+                <span className="text-sm font-semibold">{MONTHS[mo]} {y}</span>
+                <button onClick={() => setView(new Date(y, mo + 1, 1))} className="w-7 h-7 rounded hover:bg-gray-100 text-gray-600">›</button>
+              </div>
+              <div className="grid grid-cols-7 gap-y-1 text-center">
+                {WEEKDAYS.map((w, i) => (<div key={i} className="text-[11px] text-gray-400 font-medium pb-1">{w}</div>))}
+                {cells.map((d, i) => {
+                  if (!d) return <div key={i} />;
+                  const isStart = tStart && sameDay(d, tStart);
+                  const isEnd = tEnd && sameDay(d, tEnd);
+                  const future = d > today;
+                  const between = inR(d);
+                  let cls = "text-gray-700 hover:bg-gray-100";
+                  if (future) cls = "text-gray-300 cursor-default";
+                  else if (isStart || isEnd) cls = "bg-blue-600 text-white font-semibold";
+                  else if (between) cls = "bg-blue-100 text-blue-800";
+                  return (
+                    <button key={i} disabled={future} onClick={() => clickDay(d)} onMouseEnter={() => setHover(d)}
+                      className={`mx-auto w-8 h-8 rounded-full text-xs flex items-center justify-center transition ${cls}`}>
+                      {d.getDate()}
+                    </button>
+                  );
+                })}
+              </div>
+              {tStart && !tEnd && <p className="text-[11px] text-gray-400 mt-3 text-center">Select end date</p>}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -103,12 +184,13 @@ export default function DashboardPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [ready, setReady] = useState(false);
-  const [period, setPeriod] = useState("this");
-  const [customStart, setCustomStart] = useState("");
-  const [customEnd, setCustomEnd] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [hoverSrc, setHoverSrc] = useState<string | null>(null);
+  const [range, setRange] = useState<RangeSel>(() => {
+    const n = new Date();
+    return { start: new Date(n.getFullYear(), n.getMonth(), 1), end: new Date(n.getFullYear(), n.getMonth() + 1, 1), label: "This Month" };
+  });
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -119,50 +201,25 @@ export default function DashboardPage() {
       .finally(() => { setLoading(false); setTimeout(() => setReady(true), 60); });
   }, []);
 
-  if (loading)
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+  if (loading) return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
 
-  const monthsSet = new Set(leads.map((l) => monthKey(new Date(l.created_at))));
-  const now0 = new Date();
-  const thisMk = monthKey(now0);
-  const lastMk = monthKey(new Date(now0.getFullYear(), now0.getMonth() - 1, 1));
-  const monthOptions = Array.from(monthsSet).filter((mk) => mk !== thisMk && mk !== lastMk).sort().reverse();
-
-  const usingCustom = !!(customStart && customEnd && customStart <= customEnd);
-  let sel: Period;
-  if (usingCustom) {
-    const start = new Date(customStart + "T00:00:00");
-    const end = new Date(customEnd + "T00:00:00"); end.setDate(end.getDate() + 1);
-    const fmt = (s: string) => new Date(s + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
-    sel = { start, end, label: `${fmt(customStart)} - ${fmt(customEnd)}`, isRange: true, days: 0 };
-  } else {
-    sel = resolvePeriod(period);
-  }
-
-  // periodLeads -> source donut (always full); filtered -> everything else (respects source cross-filter)
-  const periodLeads = leads.filter((l) => { const d = new Date(l.created_at); return d >= sel.start && d < sel.end; });
+  const periodLeads = leads.filter((l) => { const d = new Date(l.created_at); return d >= range.start && d < range.end; });
   const filtered = sourceFilter ? periodLeads.filter((l) => l.source === sourceFilter) : periodLeads;
 
   let trendRaw: string[] = [];
-  const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0);
-  if (sel.isRange) {
-    const stop = sel.end < new Date(todayMid.getTime() + 86400000) ? sel.end : new Date(todayMid.getTime() + 86400000);
-    let d = new Date(sel.start);
-    while (d < stop) { trendRaw.push(dayKey(d)); d = new Date(d.getTime() + 86400000); }
-  } else {
-    const n = Math.min(sel.days, 31);
-    for (let i = n - 1; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); trendRaw.push(dayKey(d)); }
-  }
+  const todayMid = startOfDay(new Date());
+  const stop = range.end < addDays(todayMid, 1) ? range.end : addDays(todayMid, 1);
+  let dd = new Date(range.start);
+  let guard = 0;
+  while (dd < stop && guard < 800) { trendRaw.push(dayKey(dd)); dd = addDays(dd, 1); guard++; }
+  if (trendRaw.length === 0) trendRaw.push(dayKey(todayMid));
   const trendDates = trendRaw.length > 62 ? trendRaw.slice(-62) : trendRaw;
 
   const total = filtered.length;
-  const monthForKpi = sel.isRange ? filtered.length : filtered.filter((l) => monthKey(new Date(l.created_at)) === thisMk).length;
   const won = filtered.filter((l) => l.status === "won").length;
   const convRate = total > 0 ? Math.round((won / total) * 100) : 0;
-  const daysSpan = Math.max(1, trendDates.length);
-  const avgPerDay = total / daysSpan;
+  const avgPerDay = total / Math.max(1, trendDates.length);
 
-  // Source donut from periodLeads
   const sourceCounts: Record<string, number> = {};
   periodLeads.forEach((l) => { sourceCounts[l.source] = (sourceCounts[l.source] || 0) + 1; });
   const sourceTotal = periodLeads.length;
@@ -192,7 +249,6 @@ export default function DashboardPage() {
   filtered.forEach((l) => { const c = l.utm_campaign; if (!c) return; if (!campMap[c]) campMap[c] = { total: 0, won: 0 }; campMap[c].total++; if (l.status === "won") campMap[c].won++; });
   const campaigns = Object.entries(campMap).map(([c, v]) => ({ campaign: c, ...v })).sort((a, b) => b.total - a.total).slice(0, 6);
 
-  // Donut geometry
   const R = 70, C = 2 * Math.PI * R;
   let cumulative = 0;
   const donutSegments = sourceData.map((s) => {
@@ -201,24 +257,21 @@ export default function DashboardPage() {
     cumulative += frac; return seg;
   });
 
-  // Line geometry
   const W = 640, H = 200, PAD = 24;
   const pts = trend.map((t, i) => {
     const x = PAD + (i * (W - 2 * PAD)) / Math.max(1, trend.length - 1);
-    const y = H - PAD - (t.count / maxTrend) * (H - 2 * PAD);
-    return { x, y, ...t };
+    const yy = H - PAD - (t.count / maxTrend) * (H - 2 * PAD);
+    return { x, y: yy, ...t };
   });
   const polyline = pts.map((p) => `${p.x},${p.y}`).join(" ");
-  const areaPath = pts.length ? `M ${PAD},${H - PAD} L ${pts.map((p) => `${p.x},${p.y}`).join(" L ")} L ${W - PAD},${H - PAD} Z` : "";
+  const areaPath = pts.length ? `M ${PAD},${H - PAD} L ${pts.map((p) => `${p.x},${p.y}`).join(" L ")} L ${pts[pts.length - 1].x},${H - PAD} Z` : "";
   const hp = hoverIdx != null && pts[hoverIdx] ? pts[hoverIdx] : null;
 
-  function clearCustom() { setCustomStart(""); setCustomEnd(""); }
   function toggleSource(s: string) { setSourceFilter((cur) => (cur === s ? "" : s)); }
   function onLineMove(e: React.MouseEvent<SVGSVGElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
     const f = (e.clientX - rect.left) / rect.width;
-    const idx = Math.max(0, Math.min(trend.length - 1, Math.round(f * (trend.length - 1))));
-    setHoverIdx(idx);
+    setHoverIdx(Math.max(0, Math.min(trend.length - 1, Math.round(f * (trend.length - 1)))));
   }
 
   return (
@@ -232,44 +285,16 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="px-8 py-6 max-w-[1400px] mx-auto">
-        {/* Period selector */}
-        <div className="bg-white border rounded-xl p-3 mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">Quick:</span>
-            <select value={usingCustom ? "" : period} onChange={(e) => { clearCustom(); setPeriod(e.target.value); }}
-              className={`border rounded-lg px-3 py-1.5 text-sm bg-white font-medium ${usingCustom ? "text-gray-400" : ""}`}>
-              {usingCustom && <option value="">- custom -</option>}
-              <option value="this">This Month</option>
-              <option value="last">Last Month</option>
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-              <option value="90d">Last 90 days</option>
-              <option value="all">All time</option>
-              {monthOptions.length > 0 && (
-                <optgroup label="Specific month">
-                  {monthOptions.map((mk) => (<option key={mk} value={mk}>{formatMonth(mk)}</option>))}
-                </optgroup>
-              )}
-            </select>
-          </div>
-          <div className="h-5 w-px bg-gray-200 hidden sm:block" />
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-gray-500">Calendar:</span>
-            <input type="date" value={customStart} max={customEnd || undefined} onChange={(e) => setCustomStart(e.target.value)} className="border rounded-lg px-2 py-1.5 text-sm" />
-            <span className="text-gray-400 text-sm">to</span>
-            <input type="date" value={customEnd} min={customStart || undefined} onChange={(e) => setCustomEnd(e.target.value)} className="border rounded-lg px-2 py-1.5 text-sm" />
-            {usingCustom && <button onClick={clearCustom} className="text-xs text-red-600 hover:underline ml-1">Clear</button>}
-          </div>
-          <span className="text-sm text-gray-400 ml-auto">Showing: <span className="text-gray-700 font-medium">{sel.label}</span></span>
-        </div>
-
-        {/* Source cross-filter chips */}
-        <div className="flex flex-wrap items-center gap-2 mb-5">
-          <span className="text-xs text-gray-400">Filter source:</span>
+      <div className="px-6 py-6 max-w-[1500px] mx-auto">
+        {/* Toolbar: date picker + source chips */}
+        <div className="bg-white border rounded-xl p-3 mb-6 flex flex-wrap items-center gap-3">
+          <span className="text-sm text-gray-500">Period:</span>
+          <DateRangePicker range={range} onChange={(r) => setRange(r)} />
+          <div className="h-5 w-px bg-gray-200 mx-1 hidden sm:block" />
+          <span className="text-xs text-gray-400">Source:</span>
           <button onClick={() => setSourceFilter("")}
             className={`px-3 py-1 rounded-full text-xs font-medium border transition ${sourceFilter === "" ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"}`}>
-            All sources
+            All
           </button>
           {sourceData.map((s) => (
             <button key={s.source} onClick={() => toggleSource(s.source)}
@@ -279,27 +304,25 @@ export default function DashboardPage() {
               {s.label}
             </button>
           ))}
-          {sourceFilter && <span className="text-xs text-gray-400">· {total} leads</span>}
+          <span className="text-sm text-gray-400 ml-auto">{range.label}{sourceFilter ? ` · ${sourceInfo(sourceFilter).label}` : ""}</span>
         </div>
 
-        {/* KPI cards */}
+        {/* KPIs */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <KpiCard label="Total Leads" accent="text-gray-900"><CountUp value={total} /></KpiCard>
-          <KpiCard label={sel.isRange ? "In Period" : "This Month"} accent="text-blue-600"><CountUp value={monthForKpi} /></KpiCard>
           <KpiCard label="Won" accent="text-green-600"><CountUp value={won} suffix={` (${convRate}%)`} /></KpiCard>
           <KpiCard label="Avg / Day" accent="text-amber-600"><CountUp value={avgPerDay} decimals={1} /></KpiCard>
+          <KpiCard label="Sources Active" accent="text-blue-600"><CountUp value={sourceData.length} /></KpiCard>
         </div>
 
         {/* Trend + Donut */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
           <div className="lg:col-span-2 bg-white border rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">Leads Trend - {sel.label}{sourceFilter ? ` (${sourceInfo(sourceFilter).label})` : ""}</h3>
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">Leads Trend - {range.label}{sourceFilter ? ` (${sourceInfo(sourceFilter).label})` : ""}</h3>
             <div className="relative">
-              <svg viewBox={`0 0 ${W} ${H}`} className="w-full cursor-crosshair" style={{ maxHeight: 240 }}
-                onMouseMove={onLineMove} onMouseLeave={() => setHoverIdx(null)}>
+              <svg viewBox={`0 0 ${W} ${H}`} className="w-full cursor-crosshair" style={{ maxHeight: 260 }} onMouseMove={onLineMove} onMouseLeave={() => setHoverIdx(null)}>
                 <path d={areaPath} fill="#3b82f6" style={{ opacity: ready ? 0.08 : 0, transition: "opacity 0.6s" }} />
-                <polyline points={polyline} fill="none" stroke="#3b82f6" strokeWidth="2"
-                  strokeDasharray={1400} strokeDashoffset={ready ? 0 : 1400} style={{ transition: "stroke-dashoffset 1s ease-out" }} />
+                <polyline points={polyline} fill="none" stroke="#3b82f6" strokeWidth="2" strokeDasharray={1600} strokeDashoffset={ready ? 0 : 1600} style={{ transition: "stroke-dashoffset 1s ease-out" }} />
                 {hp && <line x1={hp.x} y1={PAD - 6} x2={hp.x} y2={H - PAD} stroke="#3b82f6" strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />}
                 {pts.map((p, i) => (<circle key={i} cx={p.x} cy={p.y} r={hoverIdx === i ? 5 : 2.5} fill="#3b82f6" style={{ transition: "r 0.15s" }} />))}
                 <line x1={PAD} y1={H - PAD} x2={W - PAD} y2={H - PAD} stroke="#e5e7eb" strokeWidth="1" />
@@ -327,31 +350,23 @@ export default function DashboardPage() {
                   <g transform="rotate(-90 90 90)">
                     {donutSegments.map((s, i) => (
                       <circle key={i} cx="90" cy="90" r={R} fill="none" stroke={s.color} strokeWidth={hoverSrc === s.source ? 26 : 22}
-                        strokeDasharray={`${ready ? s.dash : 0} ${C}`} strokeDashoffset={s.offset}
-                        className="cursor-pointer"
-                        onMouseEnter={() => setHoverSrc(s.source)} onMouseLeave={() => setHoverSrc(null)}
-                        onClick={() => toggleSource(s.source)}
+                        strokeDasharray={`${ready ? s.dash : 0} ${C}`} strokeDashoffset={s.offset} className="cursor-pointer"
+                        onMouseEnter={() => setHoverSrc(s.source)} onMouseLeave={() => setHoverSrc(null)} onClick={() => toggleSource(s.source)}
                         style={{ opacity: hoverSrc && hoverSrc !== s.source ? 0.35 : (sourceFilter && sourceFilter !== s.source ? 0.4 : 1), transition: "stroke-dasharray 0.8s ease-out, opacity 0.2s, stroke-width 0.2s" }} />
                     ))}
                   </g>
-                  <text x="90" y="86" textAnchor="middle" className="fill-gray-900" style={{ fontSize: 26, fontWeight: 700 }}>
-                    {hoverSrc ? (sourceCounts[hoverSrc] || 0) : sourceTotal}
-                  </text>
-                  <text x="90" y="104" textAnchor="middle" className="fill-gray-400" style={{ fontSize: 11 }}>
-                    {hoverSrc ? sourceInfo(hoverSrc).label : "leads"}
-                  </text>
+                  <text x="90" y="86" textAnchor="middle" className="fill-gray-900" style={{ fontSize: 26, fontWeight: 700 }}>{hoverSrc ? (sourceCounts[hoverSrc] || 0) : sourceTotal}</text>
+                  <text x="90" y="104" textAnchor="middle" className="fill-gray-400" style={{ fontSize: 11 }}>{hoverSrc ? sourceInfo(hoverSrc).label : "leads"}</text>
                 </svg>
                 <div className="mt-3 w-full space-y-1.5">
                   {donutSegments.map((s, i) => (
-                    <button key={i} onClick={() => toggleSource(s.source)}
-                      onMouseEnter={() => setHoverSrc(s.source)} onMouseLeave={() => setHoverSrc(null)}
+                    <button key={i} onClick={() => toggleSource(s.source)} onMouseEnter={() => setHoverSrc(s.source)} onMouseLeave={() => setHoverSrc(null)}
                       className={`w-full flex items-center justify-between text-xs rounded px-1.5 py-1 transition ${sourceFilter === s.source ? "bg-gray-100" : "hover:bg-gray-50"}`}>
                       <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: s.color }} />{s.label}</span>
                       <span className="text-gray-500">{s.count} ({Math.round(s.frac * 100)}%)</span>
                     </button>
                   ))}
                 </div>
-                {sourceFilter && <p className="text-[10px] text-gray-400 mt-2">Click again to clear filter</p>}
               </div>
             )}
           </div>
@@ -373,7 +388,6 @@ export default function DashboardPage() {
               })}
             </div>
           </div>
-
           <div className="bg-white border rounded-xl p-5">
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Quantity Requested</h3>
             {qtyData.length === 0 ? <p className="text-xs text-gray-400">No quantity data</p> : (
@@ -404,7 +418,6 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
-
           <div className="bg-white border rounded-xl p-5">
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Campaign Performance</h3>
             {campaigns.length === 0 ? <p className="text-xs text-gray-400">No campaign data</p> : (
@@ -430,9 +443,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <p className="text-center text-[11px] text-gray-400 mt-6">
-          Showing {sel.label.toLowerCase()} - {total} leads - {leads.length} total in system
-        </p>
+        <p className="text-center text-[11px] text-gray-400 mt-6">Showing {range.label.toLowerCase()} - {total} leads - {leads.length} total in system</p>
       </div>
     </div>
   );
