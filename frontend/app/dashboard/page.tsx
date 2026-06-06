@@ -230,6 +230,25 @@ export default function DashboardPage() {
   const cpl = adSpend > 0 && total > 0 ? adSpend / total : 0;
   const cpa = adSpend > 0 && won > 0 ? adSpend / won : 0;
 
+  // ---- Per-source ROAS breakdown (always all sources + total) ----
+  const roasOrder = ["google_ads", "meta_ads", "website", "manual"];
+  const presentSources = roasOrder.filter((s) => periodLeads.some((l) => l.source === s));
+  const roasRows = presentSources.map((src) => {
+    const srcLeads = periodLeads.filter((l) => l.source === src);
+    const leadsN = srcLeads.length;
+    const wonN = srcLeads.filter((l) => l.status === "won").length;
+    const rev = srcLeads.filter((l) => l.status === "won").reduce((a, l) => a + (l.deal_value || 0), 0);
+    const sp = spends.filter((s) => monthsSet.has(s.month) && s.source === src).reduce((a, s) => a + (s.amount || 0), 0);
+    return { src, info: sourceInfo(src), leadsN, wonN, rev, sp,
+      roas: sp > 0 ? rev / sp : null, cpl: sp > 0 && leadsN > 0 ? sp / leadsN : null, cpa: sp > 0 && wonN > 0 ? sp / wonN : null };
+  });
+  const tLeads = periodLeads.length;
+  const tWon = periodLeads.filter((l) => l.status === "won").length;
+  const tRev = periodLeads.filter((l) => l.status === "won").reduce((a, l) => a + (l.deal_value || 0), 0);
+  const tSpend = spends.filter((s) => monthsSet.has(s.month)).reduce((a, s) => a + (s.amount || 0), 0);
+  const totalsRow = { leadsN: tLeads, wonN: tWon, rev: tRev, sp: tSpend,
+    roas: tSpend > 0 ? tRev / tSpend : null, cpl: tSpend > 0 && tLeads > 0 ? tSpend / tLeads : null, cpa: tSpend > 0 && tWon > 0 ? tSpend / tWon : null };
+
   const sourceCounts: Record<string, number> = {};
   periodLeads.forEach((l) => { sourceCounts[l.source] = (sourceCounts[l.source] || 0) + 1; });
   const sourceTotal = periodLeads.length;
@@ -324,13 +343,52 @@ export default function DashboardPage() {
           <KpiCard label="Active Sources" icon="📊" iconBg="#f5f3ff" accent="text-violet-600"><CountUp value={sourceData.length} /></KpiCard>
         </div>
 
-        {/* ROAS row */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-          <RoasCard label="Ad Spend" accent="text-rose-600"><CountUp value={adSpend} prefix="₹" /></RoasCard>
-          <RoasCard label="Revenue (Won)" accent="text-green-600"><CountUp value={revenue} prefix="₹" /></RoasCard>
-          <RoasCard label="ROAS" accent="text-indigo-600">{adSpend > 0 ? <CountUp value={roas} decimals={1} suffix="x" /> : "—"}</RoasCard>
-          <RoasCard label="Cost / Lead" accent="text-gray-800">{cpl > 0 ? money(cpl) : "—"}</RoasCard>
-          <RoasCard label="Cost / Sale" accent="text-gray-800">{cpa > 0 ? money(cpa) : "—"}</RoasCard>
+        {/* ROAS by Source */}
+        <div className="bg-white border rounded-2xl p-5 mb-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-gray-700">💰 ROAS by Source · {range.label}</h3>
+            <span className="text-[11px] text-gray-400">Spend & order values set via "Manage ROAS"</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-gray-500 border-b text-xs">
+                  <th className="text-left py-2 font-medium">Source</th>
+                  <th className="text-right py-2 font-medium">Leads</th>
+                  <th className="text-right py-2 font-medium">Won</th>
+                  <th className="text-right py-2 font-medium">Ad Spend</th>
+                  <th className="text-right py-2 font-medium">Revenue</th>
+                  <th className="text-right py-2 font-medium">ROAS</th>
+                  <th className="text-right py-2 font-medium">Cost/Lead</th>
+                  <th className="text-right py-2 font-medium">Cost/Sale</th>
+                </tr>
+              </thead>
+              <tbody>
+                {roasRows.map((r) => (
+                  <tr key={r.src} className="border-b last:border-0 hover:bg-gray-50 transition">
+                    <td className="py-2.5"><span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full" style={{ background: r.info.color }} />{r.info.label}</span></td>
+                    <td className="py-2.5 text-right">{r.leadsN}</td>
+                    <td className="py-2.5 text-right text-green-600">{r.wonN}</td>
+                    <td className="py-2.5 text-right text-rose-600 font-medium">{r.sp > 0 ? money(r.sp) : "—"}</td>
+                    <td className="py-2.5 text-right text-green-700 font-medium">{r.rev > 0 ? money(r.rev) : "—"}</td>
+                    <td className="py-2.5 text-right font-bold text-indigo-600">{r.roas != null ? `${r.roas.toFixed(1)}x` : "—"}</td>
+                    <td className="py-2.5 text-right text-gray-600">{r.cpl != null ? money(r.cpl) : "—"}</td>
+                    <td className="py-2.5 text-right text-gray-600">{r.cpa != null ? money(r.cpa) : "—"}</td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-gray-200 font-semibold bg-gray-50/60">
+                  <td className="py-2.5">Total</td>
+                  <td className="py-2.5 text-right">{totalsRow.leadsN}</td>
+                  <td className="py-2.5 text-right text-green-600">{totalsRow.wonN}</td>
+                  <td className="py-2.5 text-right text-rose-600">{totalsRow.sp > 0 ? money(totalsRow.sp) : "—"}</td>
+                  <td className="py-2.5 text-right text-green-700">{totalsRow.rev > 0 ? money(totalsRow.rev) : "—"}</td>
+                  <td className="py-2.5 text-right text-indigo-600">{totalsRow.roas != null ? `${totalsRow.roas.toFixed(1)}x` : "—"}</td>
+                  <td className="py-2.5 text-right text-gray-700">{totalsRow.cpl != null ? money(totalsRow.cpl) : "—"}</td>
+                  <td className="py-2.5 text-right text-gray-700">{totalsRow.cpa != null ? money(totalsRow.cpa) : "—"}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Trend + Donut */}
@@ -458,14 +516,6 @@ function KpiCard({ label, icon, iconBg, accent, delta, children }: { label: stri
   );
 }
 
-function RoasCard({ label, accent, children }: { label: string; accent: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-white border rounded-2xl p-4 shadow-sm">
-      <div className="text-xs text-gray-500 mb-1">{label}</div>
-      <div className={`text-xl font-bold ${accent}`}>{children}</div>
-    </div>
-  );
-}
 
 function RoasModal({ spends, wonLeads, onClose, onSpendSaved, onDealSaved }: {
   spends: Spend[]; wonLeads: Lead[]; onClose: () => void; onSpendSaved: () => Promise<void> | void; onDealSaved: () => Promise<void> | void;
