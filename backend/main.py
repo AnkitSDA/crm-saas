@@ -27,6 +27,7 @@ app.include_router(auth.router)
 app.include_router(leads.router)
 app.include_router(webhooks.router)
 app.include_router(tenant.router)
+app.include_router(admin.router)
 
 @app.get("/")
 def root():
