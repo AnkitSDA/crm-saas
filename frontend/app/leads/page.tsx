@@ -78,6 +78,9 @@ const SOURCE_TABS = [
   { id: "manual",     label: "Manual",      emoji: "✍️" },
 ];
 
+// Tabs that are always shown regardless of enabled_sources
+const ALWAYS_TABS = ["", "manual"];
+
 // Format an ISO datetime for the datetime-local input (local time, no seconds)
 function toLocalInput(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -101,6 +104,9 @@ export default function LeadsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", phone: "", email: "", notes: "" });
 
+  // Which lead sources this client has enabled (set by agency). Default: all on.
+  const [enabledSources, setEnabledSources] = useState<string[]>(["google_ads", "meta_ads", "website"]);
+
   // Per-expanded-lead state
   const [activities, setActivities] = useState<Activity[]>([]);
   const [newNote, setNewNote] = useState("");
@@ -117,6 +123,7 @@ export default function LeadsPage() {
       router.push("/login");
       return;
     }
+    fetchTenant();
     fetchLeads();
     fetchSourceCounts();
     fetchReminders();
@@ -126,6 +133,16 @@ export default function LeadsPage() {
     const id = setTimeout(fetchLeads, search ? 350 : 0);
     return () => clearTimeout(id);
   }, [search, statusFilter, sourceFilter]);
+
+  async function fetchTenant() {
+    try {
+      const res = await api.get("/tenant/me");
+      const raw = (res.data && res.data.enabled_sources) || "google_ads,meta_ads,website";
+      setEnabledSources(String(raw).split(",").map((s: string) => s.trim()).filter(Boolean));
+    } catch {
+      // if it fails, keep default (all sources shown)
+    }
+  }
 
   async function fetchLeads() {
     try {
@@ -311,6 +328,11 @@ export default function LeadsPage() {
     return "bg-white text-gray-700 border-gray-200 hover:border-gray-400 hover:bg-gray-50";
   }
 
+  // Only show tabs the agency has enabled (All + Manual always shown).
+  const visibleTabs = SOURCE_TABS.filter(
+    (t) => ALWAYS_TABS.includes(t.id) || enabledSources.includes(t.id)
+  );
+
   // Follow-up badge for a lead row
   function followUpBadge(lead: Lead) {
     if (!lead.follow_up_at) return null;
@@ -421,9 +443,9 @@ export default function LeadsPage() {
           </div>
         )}
 
-        {/* Source Tabs */}
+        {/* Source Tabs (filtered by enabled_sources) */}
         <div className="flex flex-wrap gap-2 mb-4">
-          {SOURCE_TABS.map((tab) => (
+          {visibleTabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setSourceFilter(tab.id)}
