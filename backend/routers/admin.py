@@ -214,3 +214,27 @@ def admin_update_lead(lead_id: str, data: AdminLeadUpdate, admin: User = Depends
         setattr(lead, field, value)
     db.commit()
     return {"ok": True}
+
+
+# ---------------- delete client (DANGER) ----------------
+@router.delete("/clients/{tenant_id}")
+def delete_client(tenant_id: str, admin: User = Depends(require_super_admin), db: Session = Depends(get_db)):
+    """Permanently delete a client: tenant + its users + all leads + ad spends."""
+    t = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Client not found")
+    # Safety: don't allow deleting the agency's own super_admin tenant
+    has_super = (db.query(User)
+                 .filter(User.tenant_id == tenant_id, User.role == "super_admin").first())
+    if has_super:
+        raise HTTPException(status_code=400, detail="Cannot delete the agency (super_admin) tenant")
+
+    deleted_leads = db.query(Lead).filter(Lead.tenant_id == tenant_id).delete(synchronize_session=False)
+    try:
+        db.query(AdSpend).filter(AdSpend.tenant_id == tenant_id).delete(synchronize_session=False)
+    except Exception:
+        pass
+    db.query(User).filter(User.tenant_id == tenant_id).delete(synchronize_session=False)
+    db.delete(t)
+    db.commit()
+    return {"ok": True, "deleted_leads": int(deleted_leads or 0)}

@@ -111,6 +111,19 @@ export default function AgencyDashboard() {
     catch { toast.error("Update failed"); }
   }
 
+  async function deleteClient(id: string, name: string) {
+    const typed = prompt(`⚠️ PERMANENT DELETE\n\n"${name}" ka tenant + login + saare leads delete ho jayenge. Wapas nahi aayenge.\n\nConfirm karne ke liye client ka naam type karo:`);
+    if (typed === null) return;
+    if (typed.trim() !== name.trim()) { toast.error("Naam match nahi hua — delete cancel"); return; }
+    try {
+      const r = await api.delete(`/admin/clients/${id}`);
+      toast.success(`Deleted (${r.data.deleted_leads} leads removed)`);
+      setOpenId(null); setDetail(null); load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Delete failed");
+    }
+  }
+
   async function createClient() {
     if (!bn || !em || !pw) { toast.error("Fill business name, email, password"); return; }
     setSaving(true);
@@ -262,6 +275,12 @@ export default function AgencyDashboard() {
                                         </div>
                                       </div>
                                     )}
+                                    <div className="pt-2 mt-2 border-t border-slate-200">
+                                      <div className="text-xs font-semibold text-red-400 mb-1">DANGER ZONE</div>
+                                      <button onClick={() => deleteClient(c.id, c.name)}
+                                        className="border border-red-300 text-red-600 hover:bg-red-50 text-sm px-4 py-2 rounded-lg w-full">
+                                        Delete Client (permanent)</button>
+                                    </div>
                                   </div>
 
                                   {/* integration */}
