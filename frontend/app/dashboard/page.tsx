@@ -179,6 +179,7 @@ export default function DashboardPage() {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [hoverSrc, setHoverSrc] = useState<string | null>(null);
   const [roasOpen, setRoasOpen] = useState(false);
+  const [brand, setBrand] = useState<{ name: string; logo: string; color: string }>({ name: "", logo: "", color: "#111827" });
   const [range, setRange] = useState<RangeSel>(() => {
     const n = new Date();
     return { start: new Date(n.getFullYear(), n.getMonth(), 1), end: new Date(n.getFullYear(), n.getMonth() + 1, 1), label: "This Month" };
@@ -186,10 +187,20 @@ export default function DashboardPage() {
 
   function loadLeads() { return api.get("/leads/?limit=500").then((r) => setLeads(r.data.items || [])); }
   function loadSpends() { return api.get("/leads/spends").then((r) => setSpends(r.data || [])).catch(() => {}); }
+  function loadTenant() {
+    return api.get("/tenant/me").then((r) => {
+      setBrand({
+        name: r.data.brand_name || r.data.name || "",
+        logo: r.data.logo_url || "",
+        color: r.data.accent_color || "#111827",
+      });
+    }).catch(() => {});
+  }
 
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) { router.push("/login"); return; }
+    loadTenant();
     Promise.all([loadLeads(), loadSpends()]).catch(() => router.push("/login")).finally(() => { setLoading(false); setTimeout(() => setReady(true), 60); });
   }, []);
 
@@ -308,8 +319,12 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen" style={{ background: "linear-gradient(180deg,#f8fafc,#eef2f7)" }}>
+      <div className="h-1 w-full" style={{ backgroundColor: brand.color }} />
       <div className="bg-white/80 backdrop-blur border-b px-6 py-4 flex justify-between items-center sticky top-0 z-30">
-        <h1 className="text-xl font-bold tracking-tight">Dashboard</h1>
+        <div className="flex items-center gap-3">
+          {brand.logo ? <img src={brand.logo} alt="" className="h-8 w-auto rounded" onError={(e:any)=>{e.target.style.display='none';}} /> : null}
+          <h1 className="text-xl font-bold tracking-tight" style={{ color: brand.color }}>{brand.name || "Dashboard"}</h1>
+        </div>
         <div className="flex gap-4 items-center">
           <button onClick={() => router.push("/leads")} className="text-sm text-blue-600 hover:underline">Leads</button>
           <button onClick={() => router.push("/settings")} className="text-sm text-blue-600 hover:underline">Settings</button>
@@ -496,6 +511,7 @@ export default function DashboardPage() {
         </div>
 
         <p className="text-center text-[11px] text-gray-400 mt-6">Showing {range.label.toLowerCase()} · {total} leads · {leads.length} total in system</p>
+        <div className="text-center text-[11px] text-gray-400 mt-2">Powered by <span className="font-medium text-gray-500">Brandbanalo</span></div>
       </div>
 
       {roasOpen && (
