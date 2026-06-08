@@ -28,6 +28,7 @@ class UpdateClient(BaseModel):
     plan:            Optional[str]   = None
     is_active:       Optional[bool]  = None
     enabled_sources: Optional[str]   = None   # csv: "google_ads,meta_ads,website"
+    access_mode:     Optional[str]   = None   # active|block_all|block_leads|block_login
 
 
 class AdminLeadUpdate(BaseModel):
@@ -68,6 +69,10 @@ def _sources(t: Tenant) -> str:
     return getattr(t, "enabled_sources", None) or ALL_SOURCES
 
 
+def _mode(t: Tenant) -> str:
+    return getattr(t, "access_mode", None) or ("active" if t.is_active else "block_all")
+
+
 # ---------------- client list + create ----------------
 @router.get("/clients")
 def list_clients(admin: User = Depends(require_super_admin), db: Session = Depends(get_db)):
@@ -83,6 +88,7 @@ def list_clients(admin: User = Depends(require_super_admin), db: Session = Depen
             "id": t.id, "name": t.name, "slug": t.slug, "plan": t.plan,
             "is_active": t.is_active, "monthly_rate": rate,
             "enabled_sources": _sources(t),
+            "access_mode": _mode(t),
             "leads": leads, "won": won, "revenue": revenue, "spend": spend,
             "roas": (revenue / spend) if spend > 0 else None,
             "created_at": t.created_at,
@@ -143,6 +149,7 @@ def client_detail(tenant_id: str, admin: User = Depends(require_super_admin), db
         "id": t.id, "name": t.name, "slug": t.slug, "api_key": t.api_key,
         "plan": t.plan, "is_active": t.is_active, "monthly_rate": _rate(t),
         "enabled_sources": _sources(t),
+        "access_mode": _mode(t),
         "login_email": login.email if login else None,
         "sources": sources,
     }
@@ -161,8 +168,19 @@ def update_client(tenant_id: str, data: UpdateClient, admin: User = Depends(requ
         except Exception: pass
     if data.plan is not None:
         t.plan = data.plan
-    if data.is_active is not None:
+    if data.access_mode is not None:
+        try:
+            t.access_mode = data.access_mode
+        except Exception:
+            pass
+        # keep is_active in sync for table badge / legacy checks
+        t.is_active = (data.access_mode == "active")
+    elif data.is_active is not None:
         t.is_active = data.is_active
+        try:
+            t.access_mode = "active" if data.is_active else "block_all"
+        except Exception:
+            pass
     db.commit()
     return {"ok": True}
 

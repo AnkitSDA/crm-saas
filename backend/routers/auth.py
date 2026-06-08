@@ -85,8 +85,15 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     if not user or not pwd.verify(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    return {
-        "token": make_token(user),
+    # Suspended account check (agency super_admin always allowed)
+    if user.role != "super_admin" and user.tenant_id:
+        tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+        if tenant:
+            mode = getattr(tenant, "access_mode", None) or ("active" if tenant.is_active else "block_all")
+            if mode in ("block_all", "block_login"):
+                raise HTTPException(status_code=403, detail="Account suspended. Please contact your agency.")
+
+    return {    "token": make_token(user),
         "role":  user.role
     }
 

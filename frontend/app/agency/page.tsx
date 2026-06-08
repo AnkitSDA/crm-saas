@@ -39,7 +39,7 @@ export default function AgencyDashboard() {
 
   // editable settings (for open client)
   const [eRate, setERate] = useState(""); const [ePlan, setEPlan] = useState("");
-  const [eActive, setEActive] = useState(true); const [eSources, setESources] = useState<string[]>([]);
+  const [eMode, setEMode] = useState("active"); const [eSources, setESources] = useState<string[]>([]);
   const [savedPw, setSavedPw] = useState<string | null>(null);
 
   const webhookUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000") + "/webhooks/form";
@@ -74,7 +74,7 @@ export default function AgencyDashboard() {
       setDetail(r.data);
       setERate(String(r.data.monthly_rate || 0));
       setEPlan(r.data.plan || "");
-      setEActive(!!r.data.is_active);
+      setEMode(r.data.access_mode || (r.data.is_active ? "active" : "block_all"));
       setESources((r.data.enabled_sources || "").split(",").filter(Boolean));
     } catch { toast.error("Failed to load client"); }
   }
@@ -89,7 +89,7 @@ export default function AgencyDashboard() {
       await api.patch(`/admin/clients/${id}`, {
         monthly_rate: parseFloat(eRate) || 0,
         plan: ePlan,
-        is_active: eActive,
+        access_mode: eMode,
         enabled_sources: eSources.join(","),
       });
       toast.success("Settings saved");
@@ -236,11 +236,22 @@ export default function AgencyDashboard() {
                                       <label className="text-xs text-slate-400">Plan</label>
                                       <input className={inputCls} value={ePlan} onChange={(e) => setEPlan(e.target.value)} placeholder="active / basic / pro" />
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                      <button onClick={() => setEActive(!eActive)}
-                                        className={"text-xs px-3 py-1.5 rounded-full " + (eActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500")}>
-                                        {eActive ? "● Active" : "○ Inactive"}</button>
-                                      <span className="text-xs text-slate-400">click to toggle</span>
+                                    <div>
+                                      <label className="text-xs text-slate-400">Access mode</label>
+                                      <div className="grid grid-cols-2 gap-2 mt-1">
+                                        {[
+                                          {k:"active",label:"🟢 Active",d:"leads + login ON"},
+                                          {k:"block_all",label:"🔴 Block all",d:"leads + login OFF"},
+                                          {k:"block_leads",label:"📥 Block leads",d:"login ON, no new leads"},
+                                          {k:"block_login",label:"🔒 Block login",d:"leads ON, no access"},
+                                        ].map((m)=>(
+                                          <button key={m.k} onClick={()=>setEMode(m.k)} title={m.d}
+                                            className={"text-xs px-2 py-2 rounded-lg border text-left " +
+                                              (eMode===m.k ? "bg-indigo-50 border-indigo-300 text-indigo-700 font-medium" : "bg-white border-slate-200 text-slate-500")}>
+                                            <div>{m.label}</div><div className="text-[10px] text-slate-400">{m.d}</div>
+                                          </button>
+                                        ))}
+                                      </div>
                                     </div>
                                     <div>
                                       <label className="text-xs text-slate-400">Sources on/off</label>

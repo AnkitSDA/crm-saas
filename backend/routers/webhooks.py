@@ -37,12 +37,12 @@ class FormLeadIn(BaseModel):
 def _resolve_tenant(db: Session, api_key: str) -> Tenant:
     if not api_key:
         raise HTTPException(status_code=401, detail="api_key required")
-    tenant = db.query(Tenant).filter(
-        Tenant.api_key == api_key,
-        Tenant.is_active == True,  # noqa: E712
-    ).first()
+    tenant = db.query(Tenant).filter(Tenant.api_key == api_key).first()
     if not tenant:
         raise HTTPException(status_code=401, detail="Invalid api_key")
+    mode = getattr(tenant, "access_mode", None) or ("active" if tenant.is_active else "block_all")
+    if mode in ("block_all", "block_leads"):
+        raise HTTPException(status_code=403, detail="Lead intake suspended for this account")
     return tenant
 
 

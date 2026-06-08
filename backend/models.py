@@ -32,6 +32,7 @@ class Tenant(Base):
     plan       = Column(String(50), default="trial")
     is_active  = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
+    access_mode = Column(String(20), default="active")
 
 class User(Base):
     __tablename__ = "users"
