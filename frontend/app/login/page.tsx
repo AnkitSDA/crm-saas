@@ -20,7 +20,12 @@ export default function LoginPage() {
       localStorage.setItem("token", res.data.token);
       localStorage.setItem("role", res.data.role);
       toast.success("Login successful!");
-      router.push("/dashboard");
+      // Agency owner -> agency dashboard; clients -> their dashboard
+      if (res.data.role === "super_admin") {
+        router.push("/agency");
+      } else {
+        router.push("/dashboard");
+      }
     } catch {
       toast.error("Invalid email or password");
     } finally {
@@ -56,16 +61,12 @@ export default function LoginPage() {
               className="mt-1"
             />
           </div>
-          <Button
-            className="w-full"
-            onClick={handleLogin}
-            disabled={loading}
-          >
+          <Button className="w-full" onClick={handleLogin} disabled={loading}>
             {loading ? "Logging in..." : "Login"}
           </Button>
         </div>
         <p className="text-sm text-center text-gray-500">
-          Don't have an account?{" "}
+          Don&apos;t have an account?{" "}
           <a href="/register" className="text-blue-600 hover:underline">
             Register
           </a>
