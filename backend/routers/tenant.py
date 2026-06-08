@@ -18,10 +18,11 @@ def get_my_tenant(
         raise HTTPException(status_code=404, detail="Tenant not found")
 
     payload = {
-        "id":         tenant.id,
+       "id":         tenant.id,
         "name":       tenant.name,
         "slug":       tenant.slug,
         "plan":       tenant.plan,
+        "enabled_sources": getattr(tenant, "enabled_sources", None) or "google_ads,meta_ads,website",
         "created_at": tenant.created_at,
     }
     if user.role in ("tenant_admin", "super_admin"):
