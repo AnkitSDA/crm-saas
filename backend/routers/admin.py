@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from typing import Optional
 from database import get_db
 from models import Tenant, User, Lead, AdSpend, gen_api_key
@@ -16,7 +16,7 @@ pwd = CryptContext(schemes=["bcrypt"])
 # ---------------- schemas ----------------
 class CreateClient(BaseModel):
     business_name: str
-    email:         EmailStr
+    email:         str
     password:      str
     monthly_rate:  Optional[float] = 3500
 
