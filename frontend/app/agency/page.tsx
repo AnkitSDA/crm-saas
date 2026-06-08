@@ -41,6 +41,7 @@ export default function AgencyDashboard() {
   const [eRate, setERate] = useState(""); const [ePlan, setEPlan] = useState("");
   const [eMode, setEMode] = useState("active"); const [eSources, setESources] = useState<string[]>([]);
   const [savedPw, setSavedPw] = useState<string | null>(null);
+  const [eBrand, setEBrand] = useState(""); const [eLogo, setELogo] = useState(""); const [eColor, setEColor] = useState("#4f46e5");
 
   const webhookUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000") + "/webhooks/form";
 
@@ -76,6 +77,10 @@ export default function AgencyDashboard() {
       setEPlan(r.data.plan || "");
       setEMode(r.data.access_mode || (r.data.is_active ? "active" : "block_all"));
       setESources((r.data.enabled_sources || "").split(",").filter(Boolean));
+      const b = r.data.branding || {};
+      setEBrand(b.brand_name || r.data.name || "");
+      setELogo(b.logo_url || "");
+      setEColor(b.accent_color || "#4f46e5");
     } catch { toast.error("Failed to load client"); }
   }
 
@@ -91,6 +96,9 @@ export default function AgencyDashboard() {
         plan: ePlan,
         access_mode: eMode,
         enabled_sources: eSources.join(","),
+        brand_name: eBrand,
+        logo_url: eLogo,
+        accent_color: eColor,
       });
       toast.success("Settings saved");
       load();
@@ -262,6 +270,19 @@ export default function AgencyDashboard() {
                                               (eSources.includes(s.key) ? "bg-indigo-50 border-indigo-300 text-indigo-700" : "bg-white border-slate-200 text-slate-400")}>
                                             {eSources.includes(s.key) ? "✓ " : ""}{s.label}</button>
                                         ))}
+                                      </div>
+                                    </div>
+                                    <div className="pt-2 mt-1 border-t border-slate-200">
+                                      <div className="text-xs font-semibold text-slate-500 mb-2">BRANDING (white-label)</div>
+                                      <label className="text-xs text-slate-400">Display name</label>
+                                      <input className={inputCls} value={eBrand} onChange={(e) => setEBrand(e.target.value)} placeholder="Client brand name" />
+                                      <label className="text-xs text-slate-400 mt-2 block">Logo URL</label>
+                                      <input className={inputCls} value={eLogo} onChange={(e) => setELogo(e.target.value)} placeholder="https://...logo.png" />
+                                      <div className="flex items-center gap-2 mt-2">
+                                        <label className="text-xs text-slate-400">Accent color</label>
+                                        <input type="color" value={eColor} onChange={(e) => setEColor(e.target.value)} className="h-8 w-12 border rounded" />
+                                        <input className="border rounded-lg px-2 py-1 text-xs w-24" value={eColor} onChange={(e) => setEColor(e.target.value)} />
+                                        {eLogo ? <img src={eLogo} alt="" className="h-8 ml-auto rounded" onError={(ev:any)=>{ev.target.style.display='none';}} /> : null}
                                       </div>
                                     </div>
                                     <button onClick={() => saveSettings(c.id)}

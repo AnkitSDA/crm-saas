@@ -29,6 +29,9 @@ class UpdateClient(BaseModel):
     is_active:       Optional[bool]  = None
     enabled_sources: Optional[str]   = None   # csv: "google_ads,meta_ads,website"
     access_mode:     Optional[str]   = None   # active|block_all|block_leads|block_login
+    brand_name:      Optional[str]   = None
+    logo_url:        Optional[str]   = None
+    accent_color:    Optional[str]   = None
 
 
 class AdminLeadUpdate(BaseModel):
@@ -71,6 +74,14 @@ def _sources(t: Tenant) -> str:
 
 def _mode(t: Tenant) -> str:
     return getattr(t, "access_mode", None) or ("active" if t.is_active else "block_all")
+
+
+def _branding(t: Tenant) -> dict:
+    return {
+        "brand_name":   getattr(t, "brand_name", None) or t.name,
+        "logo_url":     getattr(t, "logo_url", None) or "",
+        "accent_color": getattr(t, "accent_color", None) or "#4f46e5",
+    }
 
 
 # ---------------- client list + create ----------------
@@ -150,6 +161,7 @@ def client_detail(tenant_id: str, admin: User = Depends(require_super_admin), db
         "plan": t.plan, "is_active": t.is_active, "monthly_rate": _rate(t),
         "enabled_sources": _sources(t),
         "access_mode": _mode(t),
+        "branding": _branding(t),
         "login_email": login.email if login else None,
         "sources": sources,
     }
@@ -181,6 +193,13 @@ def update_client(tenant_id: str, data: UpdateClient, admin: User = Depends(requ
             t.access_mode = "active" if data.is_active else "block_all"
         except Exception:
             pass
+    for fld in ("brand_name", "logo_url", "accent_color"):
+        val = getattr(data, fld)
+        if val is not None:
+            try:
+                setattr(t, fld, val)
+            except Exception:
+                pass
     db.commit()
     return {"ok": True}
 
