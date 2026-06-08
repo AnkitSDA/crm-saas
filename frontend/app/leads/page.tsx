@@ -106,6 +106,7 @@ export default function LeadsPage() {
 
   // Which lead sources this client has enabled (set by agency). Default: all on.
   const [enabledSources, setEnabledSources] = useState<string[]>(["google_ads", "meta_ads", "website"]);
+  const [brand, setBrand] = useState<{ name: string; logo: string; color: string }>({ name: "", logo: "", color: "#111827" });
 
   // Per-expanded-lead state
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -139,6 +140,11 @@ export default function LeadsPage() {
       const res = await api.get("/tenant/me");
       const raw = (res.data && res.data.enabled_sources) || "google_ads,meta_ads,website";
       setEnabledSources(String(raw).split(",").map((s: string) => s.trim()).filter(Boolean));
+      setBrand({
+        name: res.data.brand_name || res.data.name || "",
+        logo: res.data.logo_url || "",
+        color: res.data.accent_color || "#111827",
+      });
     } catch {
       // if it fails, keep default (all sources shown)
     }
@@ -365,8 +371,12 @@ export default function LeadsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <div className="h-1 w-full" style={{ backgroundColor: brand.color }} />
       <div className="bg-white border-b px-6 py-4 flex justify-between items-center">
-        <h1 className="text-xl font-semibold">Leads</h1>
+        <div className="flex items-center gap-3">
+          {brand.logo ? <img src={brand.logo} alt="" className="h-8 w-auto rounded" onError={(e:any)=>{e.target.style.display='none';}} /> : null}
+          <h1 className="text-xl font-semibold" style={{ color: brand.color }}>{brand.name || "Leads"}</h1>
+        </div>
         <div className="flex gap-4 items-center">
           {/* Reminder bell */}
           <button
@@ -637,6 +647,7 @@ export default function LeadsPage() {
             </tbody>
           </table>
         </div>
+        <div className="text-center text-xs text-gray-400 py-6">Powered by <span className="font-medium text-gray-500">Brandbanalo</span></div>
       </div>
     </div>
   );

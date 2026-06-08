@@ -33,6 +33,9 @@ class Tenant(Base):
     is_active  = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
     access_mode = Column(String(20), default="active")
+    brand_name      = Column(String(120))                              # 👈 ADD
+    logo_url        = Column(String(500))                              # 👈 ADD
+    accent_color    = Column(String(20), default="#4f46e5")        
 
 class User(Base):
     __tablename__ = "users"
