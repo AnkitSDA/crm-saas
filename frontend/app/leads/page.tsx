@@ -489,8 +489,8 @@ export default function LeadsPage() {
 
   function dayLabel(iso: string): string {
     const c0 = startOfDay(new Date(iso));
-    if (c0.getTime() === _today0.getTime()) return "Aaj";
-    if (c0.getTime() === _yest0.getTime()) return "Kal";
+    if (c0.getTime() === _today0.getTime()) return "Today";
+    if (c0.getTime() === _yest0.getTime()) return "Yestarday";
     return new Date(iso).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
   }
 
