@@ -47,6 +47,8 @@ interface Reminder {
   overdue: boolean;
 }
 
+interface RangeSel { start: Date; end: Date; label: string; }
+
 function parseNotes(notes: string | null): Record<string, string> {
   const result: Record<string, string> = {};
   if (!notes) return result;
@@ -81,13 +83,8 @@ const SOURCE_TABS = [
 // Tabs that are always shown regardless of enabled_sources
 const ALWAYS_TABS = ["", "manual"];
 
-// Date quick-filter chips
-const DATE_TABS = [
-  { id: "",          label: "Sab" },
-  { id: "today",     label: "Aaj" },
-  { id: "yesterday", label: "Kal" },
-  { id: "7d",        label: "Last 7 din" },
-];
+const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 // Format an ISO datetime for the datetime-local input (local time, no seconds)
 function toLocalInput(iso: string | null | undefined): string {
@@ -98,11 +95,101 @@ function toLocalInput(iso: string | null | undefined): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// Start-of-day helper (local time)
-function startOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+function startOfDay(d: Date): Date { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+function addDays(d: Date, n: number): Date { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function sameDay(a: Date, b: Date): boolean { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+function fmtShort(d: Date): string { return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }); }
+
+// ---- Calendar date-range picker (same as dashboard) ----
+function DateRangePicker({ range, onChange }: { range: RangeSel; onChange: (r: RangeSel) => void }) {
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState(() => new Date(range.start.getFullYear(), range.start.getMonth(), 1));
+  const [tStart, setTStart] = useState<Date | null>(null);
+  const [tEnd, setTEnd] = useState<Date | null>(null);
+  const [hover, setHover] = useState<Date | null>(null);
+  const today = startOfDay(new Date());
+  function openPicker() {
+    setTStart(null); setTEnd(null); setHover(null);
+    const base = range.start.getFullYear() > 2001 ? range.start : today;
+    setView(new Date(base.getFullYear(), base.getMonth(), 1));
+    setOpen(true);
+  }
+  function applyRange(s: Date, eInc: Date, label?: string) {
+    const start = startOfDay(s), end = addDays(startOfDay(eInc), 1);
+    onChange({ start, end, label: label || `${fmtShort(start)} - ${fmtShort(startOfDay(eInc))}` });
+    setOpen(false);
+  }
+  function pickPreset(id: string) {
+    const n = new Date();
+    if (id === "today") applyRange(today, today, "Today");
+    else if (id === "yesterday") { const y = addDays(today, -1); applyRange(y, y, "Yesterday"); }
+    else if (id === "7d") applyRange(addDays(today, -6), today, "Last 7 days");
+    else if (id === "14d") applyRange(addDays(today, -13), today, "Last 14 days");
+    else if (id === "30d") applyRange(addDays(today, -29), today, "Last 30 days");
+    else if (id === "90d") applyRange(addDays(today, -89), today, "Last 90 days");
+    else if (id === "this") applyRange(new Date(n.getFullYear(), n.getMonth(), 1), today, "This Month");
+    else if (id === "last") applyRange(new Date(n.getFullYear(), n.getMonth() - 1, 1), new Date(n.getFullYear(), n.getMonth(), 0), "Last Month");
+    else if (id === "all") { onChange({ start: new Date(2000, 0, 1), end: addDays(today, 1), label: "All time" }); setOpen(false); }
+  }
+  function clickDay(d: Date) {
+    if (d > today) return;
+    if (!tStart || (tStart && tEnd)) { setTStart(d); setTEnd(null); return; }
+    if (d < tStart) { setTStart(d); return; }
+    setTEnd(d); applyRange(tStart, d);
+  }
+  const presets = [
+    { id: "today", label: "Today" }, { id: "yesterday", label: "Yesterday" },
+    { id: "7d", label: "Last 7 days" }, { id: "14d", label: "Last 14 days" },
+    { id: "30d", label: "Last 30 days" }, { id: "90d", label: "Last 90 days" },
+    { id: "this", label: "This month" }, { id: "last", label: "Last month" }, { id: "all", label: "All time" },
+  ];
+  const y = view.getFullYear(), mo = view.getMonth();
+  const startWd = new Date(y, mo, 1).getDay(), dim = new Date(y, mo + 1, 0).getDate();
+  const cells: (Date | null)[] = [];
+  for (let i = 0; i < startWd; i++) cells.push(null);
+  for (let dn = 1; dn <= dim; dn++) cells.push(new Date(y, mo, dn));
+  const effEnd = tEnd || hover;
+  function inR(d: Date) { if (!tStart || !effEnd) return false; const lo = tStart < effEnd ? tStart : effEnd, hi = tStart < effEnd ? effEnd : tStart; return d > lo && d < hi; }
+  return (
+    <div className="relative inline-block">
+      <button onClick={openPicker} className="flex items-center gap-2 border rounded-lg px-3 py-2 text-sm bg-white font-medium hover:border-gray-400 hover:shadow-sm transition">
+        <span>📅</span><span>{range.label}</span><span className="text-gray-400">▾</span>
+      </button>
+      {open && (<>
+        <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+        <div className="absolute z-50 mt-2 bg-white border rounded-2xl shadow-2xl flex overflow-hidden" style={{ minWidth: 480 }}>
+          <div className="w-40 border-r py-2 max-h-[340px] overflow-y-auto">
+            {presets.map((p) => (
+              <button key={p.id} onClick={() => pickPreset(p.id)}
+                className={`w-full text-left px-4 py-2 text-sm hover:bg-blue-50 transition ${range.label === p.label ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700"}`}>{p.label}</button>
+            ))}
+          </div>
+          <div className="p-4" style={{ width: 320 }}>
+            <div className="flex items-center justify-between mb-3">
+              <button onClick={() => setView(new Date(y, mo - 1, 1))} className="w-7 h-7 rounded hover:bg-gray-100 text-gray-600">‹</button>
+              <span className="text-sm font-semibold">{MONTHS[mo]} {y}</span>
+              <button onClick={() => setView(new Date(y, mo + 1, 1))} className="w-7 h-7 rounded hover:bg-gray-100 text-gray-600">›</button>
+            </div>
+            <div className="grid grid-cols-7 gap-y-1 text-center">
+              {WEEKDAYS.map((w, i) => (<div key={i} className="text-[11px] text-gray-400 font-medium pb-1">{w}</div>))}
+              {cells.map((d, i) => {
+                if (!d) return <div key={i} />;
+                const isStart = tStart && sameDay(d, tStart), isEnd = tEnd && sameDay(d, tEnd);
+                const future = d > today, between = inR(d);
+                let cls = "text-gray-700 hover:bg-gray-100";
+                if (future) cls = "text-gray-300 cursor-default";
+                else if (isStart || isEnd) cls = "bg-blue-600 text-white font-semibold";
+                else if (between) cls = "bg-blue-100 text-blue-800";
+                return (<button key={i} disabled={future} onClick={() => clickDay(d)} onMouseEnter={() => setHover(d)}
+                  className={`mx-auto w-8 h-8 rounded-full text-xs flex items-center justify-center transition ${cls}`}>{d.getDate()}</button>);
+              })}
+            </div>
+            {tStart && !tEnd && <p className="text-[11px] text-gray-400 mt-3 text-center">Select end date</p>}
+          </div>
+        </div>
+      </>)}
+    </div>
+  );
 }
 
 export default function LeadsPage() {
@@ -132,7 +219,12 @@ export default function LeadsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
-  const [dateFilter, setDateFilter] = useState(""); // "" | today | yesterday | 7d
+
+  // Date range filter (calendar picker). Default = All time (show everything).
+  const [range, setRange] = useState<RangeSel>(() => {
+    const today = startOfDay(new Date());
+    return { start: new Date(2000, 0, 1), end: addDays(today, 1), label: "All time" };
+  });
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -309,6 +401,7 @@ export default function LeadsPage() {
   }
 
   function exportCsv() {
+    const slug = range.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "all";
     const rows = [
       ["Date", "Name", "Phone", "Email", "City", "Quantity", "Source", "UTM Campaign", "Status", "Follow-up", "Notes"],
       ...displayLeads.map((l) => {
@@ -328,7 +421,7 @@ export default function LeadsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `leads-${sourceFilter || "all"}-${dateFilter || "alltime"}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `leads-${sourceFilter || "all"}-${slug}-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -385,17 +478,13 @@ export default function LeadsPage() {
 
   const duplicateIds = buildDuplicateMap();
 
-  // ---- Date filtering + grouping ----
+  // ---- Date range filtering + day grouping ----
   const _today0 = startOfDay(new Date());
-  const _yest0 = new Date(_today0); _yest0.setDate(_yest0.getDate() - 1);
-  const _week0 = new Date(_today0); _week0.setDate(_week0.getDate() - 6); // last 7 days incl today
+  const _yest0 = addDays(_today0, -1);
 
-  function inDateFilter(iso: string): boolean {
-    const c = new Date(iso);
-    if (dateFilter === "today") return c >= _today0;
-    if (dateFilter === "yesterday") return c >= _yest0 && c < _today0;
-    if (dateFilter === "7d") return c >= _week0;
-    return true;
+  function inRange(iso: string): boolean {
+    const d = new Date(iso);
+    return d >= range.start && d < range.end;
   }
 
   function dayLabel(iso: string): string {
@@ -405,27 +494,12 @@ export default function LeadsPage() {
     return new Date(iso).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
   }
 
-  // Counts for the date chips (based on currently fetched leads)
-  const dateCounts = { today: 0, yesterday: 0, week: 0 };
-  leads.forEach((l) => {
-    const c = new Date(l.created_at);
-    if (c >= _today0) dateCounts.today++;
-    if (c >= _yest0 && c < _today0) dateCounts.yesterday++;
-    if (c >= _week0) dateCounts.week++;
-  });
-
   const displayLeads = [...leads]
-    .filter((l) => inDateFilter(l.created_at))
+    .filter((l) => inRange(l.created_at))
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
+  const isAllTime = range.label === "All time";
   let lastDayLabel: string | null = null;
-
-  function dateChipCount(id: string): number | null {
-    if (id === "today") return dateCounts.today;
-    if (id === "yesterday") return dateCounts.yesterday;
-    if (id === "7d") return dateCounts.week;
-    return null;
-  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -546,26 +620,11 @@ export default function LeadsPage() {
           ))}
         </div>
 
-        {/* Date quick-filter chips: Sab / Aaj / Kal / Last 7 din */}
-        <div className="flex flex-wrap gap-2 mb-4">
-          {DATE_TABS.map((c) => {
-            const active = dateFilter === c.id;
-            const cnt = dateChipCount(c.id);
-            return (
-              <button
-                key={c.id || "all"}
-                onClick={() => setDateFilter(c.id)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${active ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"}`}
-              >
-                {c.label}
-                {cnt !== null && <span className="ml-1 opacity-70">({cnt})</span>}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Filter bar */}
+        {/* Filter bar — calendar date range + search + status + actions */}
         <div className="bg-white border rounded-lg p-3 mb-4 flex flex-wrap gap-2 items-center">
+          <span className="text-xs text-gray-400 font-medium">Period:</span>
+          <DateRangePicker range={range} onChange={(r) => setRange(r)} />
+          <div className="h-6 w-px bg-gray-200 mx-1 hidden sm:block" />
           <Input placeholder="Search name, phone, email..." value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
           <select className="border rounded-md px-3 py-2 text-sm bg-white" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="">All statuses</option>
@@ -584,7 +643,7 @@ export default function LeadsPage() {
         <p className="text-gray-500 text-sm mb-3">
           Showing {displayLeads.length} of {total} leads
           {sourceFilter ? <span className="ml-2 text-gray-700 font-medium">· {SOURCE_TABS.find((t) => t.id === sourceFilter)?.label}</span> : null}
-          {dateFilter ? <span className="ml-2 text-gray-700 font-medium">· {DATE_TABS.find((t) => t.id === dateFilter)?.label}</span> : null}
+          <span className="ml-2 text-gray-700 font-medium">· {range.label}</span>
           {duplicateIds.size > 0 && <span className="ml-2 text-amber-700">· ⚠️ {duplicateIds.size} possible duplicate{duplicateIds.size > 1 ? "s" : ""}</span>}
         </p>
 
@@ -617,7 +676,7 @@ export default function LeadsPage() {
             <tbody>
               {displayLeads.length === 0 && (
                 <tr><td colSpan={9} className="text-center py-12 text-gray-400">
-                  {dateFilter ? "Is duration mein koi lead nahi" : (sourceFilter === "meta_ads" ? "No Meta Ads leads yet" : "No leads match these filters")}
+                  {!isAllTime ? "Is duration mein koi lead nahi" : (sourceFilter === "meta_ads" ? "No Meta Ads leads yet" : "No leads match these filters")}
                 </td></tr>
               )}
               {displayLeads.map((lead) => {
