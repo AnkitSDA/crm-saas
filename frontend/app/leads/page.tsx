@@ -81,6 +81,14 @@ const SOURCE_TABS = [
 // Tabs that are always shown regardless of enabled_sources
 const ALWAYS_TABS = ["", "manual"];
 
+// Date quick-filter chips
+const DATE_TABS = [
+  { id: "",          label: "Sab" },
+  { id: "today",     label: "Aaj" },
+  { id: "yesterday", label: "Kal" },
+  { id: "7d",        label: "Last 7 din" },
+];
+
 // Format an ISO datetime for the datetime-local input (local time, no seconds)
 function toLocalInput(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -88,6 +96,13 @@ function toLocalInput(iso: string | null | undefined): string {
   if (isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Start-of-day helper (local time)
+function startOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
 }
 
 export default function LeadsPage() {
@@ -117,6 +132,7 @@ export default function LeadsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
+  const [dateFilter, setDateFilter] = useState(""); // "" | today | yesterday | 7d
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -295,7 +311,7 @@ export default function LeadsPage() {
   function exportCsv() {
     const rows = [
       ["Date", "Name", "Phone", "Email", "City", "Quantity", "Source", "UTM Campaign", "Status", "Follow-up", "Notes"],
-      ...leads.map((l) => {
+      ...displayLeads.map((l) => {
         const p = parseNotes(l.notes);
         return [
           new Date(l.created_at).toLocaleString(),
@@ -312,7 +328,7 @@ export default function LeadsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `leads-${sourceFilter || "all"}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `leads-${sourceFilter || "all"}-${dateFilter || "alltime"}-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -369,33 +385,93 @@ export default function LeadsPage() {
 
   const duplicateIds = buildDuplicateMap();
 
+  // ---- Date filtering + grouping ----
+  const _today0 = startOfDay(new Date());
+  const _yest0 = new Date(_today0); _yest0.setDate(_yest0.getDate() - 1);
+  const _week0 = new Date(_today0); _week0.setDate(_week0.getDate() - 6); // last 7 days incl today
+
+  function inDateFilter(iso: string): boolean {
+    const c = new Date(iso);
+    if (dateFilter === "today") return c >= _today0;
+    if (dateFilter === "yesterday") return c >= _yest0 && c < _today0;
+    if (dateFilter === "7d") return c >= _week0;
+    return true;
+  }
+
+  function dayLabel(iso: string): string {
+    const c0 = startOfDay(new Date(iso));
+    if (c0.getTime() === _today0.getTime()) return "Aaj";
+    if (c0.getTime() === _yest0.getTime()) return "Kal";
+    return new Date(iso).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+  }
+
+  // Counts for the date chips (based on currently fetched leads)
+  const dateCounts = { today: 0, yesterday: 0, week: 0 };
+  leads.forEach((l) => {
+    const c = new Date(l.created_at);
+    if (c >= _today0) dateCounts.today++;
+    if (c >= _yest0 && c < _today0) dateCounts.yesterday++;
+    if (c >= _week0) dateCounts.week++;
+  });
+
+  const displayLeads = [...leads]
+    .filter((l) => inDateFilter(l.created_at))
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  let lastDayLabel: string | null = null;
+
+  function dateChipCount(id: string): number | null {
+    if (id === "today") return dateCounts.today;
+    if (id === "yesterday") return dateCounts.yesterday;
+    if (id === "7d") return dateCounts.week;
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="h-1 w-full" style={{ backgroundColor: brand.color }} />
-      <div className="bg-white border-b px-6 py-4 flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          {brand.logo ? <img src={brand.logo} alt="" className="h-8 w-auto rounded" onError={(e:any)=>{e.target.style.display='none';}} /> : null}
-          <h1 className="text-xl font-semibold" style={{ color: brand.color }}>{brand.name || "Leads"}</h1>
+
+      {/* ---- Responsive header: brand + bell/logout on top, nav row below ---- */}
+      <header className="bg-white border-b sticky top-0 z-20">
+        <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            {brand.logo ? <img src={brand.logo} alt="" className="h-8 w-auto rounded shrink-0" onError={(e: any) => { e.target.style.display = "none"; }} /> : null}
+            <h1 className="text-lg sm:text-xl font-semibold truncate" style={{ color: brand.color }}>{brand.name || "Leads"}</h1>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Reminder bell */}
+            <button
+              onClick={() => setShowReminders((v) => !v)}
+              className="relative text-gray-600 hover:text-gray-900"
+              title="Follow-up reminders"
+            >
+              🔔
+              {reminders.length > 0 && (
+                <span className={`absolute -top-2 -right-2 text-[10px] text-white rounded-full px-1.5 py-0.5 ${overdueCount > 0 ? "bg-red-600" : "bg-amber-500"}`}>
+                  {reminders.length}
+                </span>
+              )}
+            </button>
+            <button onClick={() => { localStorage.clear(); router.push("/login"); }} className="text-sm text-red-500 hover:underline">Logout</button>
+          </div>
         </div>
-        <div className="flex gap-4 items-center">
-          {/* Reminder bell */}
-          <button
-            onClick={() => setShowReminders((v) => !v)}
-            className="relative text-gray-600 hover:text-gray-900"
-            title="Follow-up reminders"
-          >
-            🔔
-            {reminders.length > 0 && (
-              <span className={`absolute -top-2 -right-2 text-[10px] text-white rounded-full px-1.5 py-0.5 ${overdueCount > 0 ? "bg-red-600" : "bg-amber-500"}`}>
-                {reminders.length}
-              </span>
-            )}
-          </button>
-          <button onClick={() => router.push("/dashboard")} className="text-sm text-blue-600 hover:underline">Dashboard</button>
-          <button onClick={() => router.push("/settings")} className="text-sm text-blue-600 hover:underline">Settings</button>
-          <button onClick={() => { localStorage.clear(); router.push("/login"); }} className="text-sm text-red-500 hover:underline">Logout</button>
-        </div>
-      </div>
+        <nav className="px-2 sm:px-4 flex gap-1 border-t overflow-x-auto">
+          {[
+            { label: "Dashboard", path: "/dashboard", active: false },
+            { label: "Leads", path: "/leads", active: true },
+            { label: "Settings", path: "/settings", active: false },
+          ].map((n) => (
+            <button
+              key={n.path}
+              onClick={() => router.push(n.path)}
+              className={`px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition ${n.active ? "" : "border-transparent text-gray-500 hover:text-gray-800"}`}
+              style={n.active ? { borderColor: brand.color, color: brand.color } : undefined}
+            >
+              {n.label}
+            </button>
+          ))}
+        </nav>
+      </header>
 
       <div className="p-6">
         {/* Reminders banner */}
@@ -470,6 +546,24 @@ export default function LeadsPage() {
           ))}
         </div>
 
+        {/* Date quick-filter chips: Sab / Aaj / Kal / Last 7 din */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          {DATE_TABS.map((c) => {
+            const active = dateFilter === c.id;
+            const cnt = dateChipCount(c.id);
+            return (
+              <button
+                key={c.id || "all"}
+                onClick={() => setDateFilter(c.id)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${active ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"}`}
+              >
+                {c.label}
+                {cnt !== null && <span className="ml-1 opacity-70">({cnt})</span>}
+              </button>
+            );
+          })}
+        </div>
+
         {/* Filter bar */}
         <div className="bg-white border rounded-lg p-3 mb-4 flex flex-wrap gap-2 items-center">
           <Input placeholder="Search name, phone, email..." value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
@@ -488,8 +582,9 @@ export default function LeadsPage() {
         </div>
 
         <p className="text-gray-500 text-sm mb-3">
-          Showing {leads.length} of {total} leads
+          Showing {displayLeads.length} of {total} leads
           {sourceFilter ? <span className="ml-2 text-gray-700 font-medium">· {SOURCE_TABS.find((t) => t.id === sourceFilter)?.label}</span> : null}
+          {dateFilter ? <span className="ml-2 text-gray-700 font-medium">· {DATE_TABS.find((t) => t.id === dateFilter)?.label}</span> : null}
           {duplicateIds.size > 0 && <span className="ml-2 text-amber-700">· ⚠️ {duplicateIds.size} possible duplicate{duplicateIds.size > 1 ? "s" : ""}</span>}
         </p>
 
@@ -520,18 +615,26 @@ export default function LeadsPage() {
               </tr>
             </thead>
             <tbody>
-              {leads.length === 0 && (
+              {displayLeads.length === 0 && (
                 <tr><td colSpan={9} className="text-center py-12 text-gray-400">
-                  {sourceFilter === "meta_ads" ? "No Meta Ads leads yet" : "No leads match these filters"}
+                  {dateFilter ? "Is duration mein koi lead nahi" : (sourceFilter === "meta_ads" ? "No Meta Ads leads yet" : "No leads match these filters")}
                 </td></tr>
               )}
-              {leads.map((lead) => {
+              {displayLeads.map((lead) => {
                 const parsed = parseNotes(lead.notes);
                 const quantity = parsed.quantity || parsed.message || parsed.requirement || "";
                 const isExpanded = expandedRow === lead.id;
                 const isDuplicate = duplicateIds.has(lead.id);
+                const grpLabel = dayLabel(lead.created_at);
+                const showGroup = grpLabel !== lastDayLabel;
+                lastDayLabel = grpLabel;
                 return (
                   <Fragment key={lead.id}>
+                    {showGroup && (
+                      <tr className="bg-gray-100/70">
+                        <td colSpan={9} className="px-4 py-2 text-xs font-semibold text-gray-600">{grpLabel}</td>
+                      </tr>
+                    )}
                     <tr
                       className={`border-b hover:bg-gray-50 cursor-pointer ${isExpanded ? "bg-blue-50/40" : ""} ${isDuplicate ? "bg-amber-50/30" : ""}`}
                       onClick={() => openRow(lead)}

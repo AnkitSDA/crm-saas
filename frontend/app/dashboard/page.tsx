@@ -320,17 +320,35 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen" style={{ background: "linear-gradient(180deg,#f8fafc,#eef2f7)" }}>
       <div className="h-1 w-full" style={{ backgroundColor: brand.color }} />
-      <div className="bg-white/80 backdrop-blur border-b px-6 py-4 flex justify-between items-center sticky top-0 z-30">
-        <div className="flex items-center gap-3">
-          {brand.logo ? <img src={brand.logo} alt="" className="h-8 w-auto rounded" onError={(e:any)=>{e.target.style.display='none';}} /> : null}
-          <h1 className="text-xl font-bold tracking-tight" style={{ color: brand.color }}>{brand.name || "Dashboard"}</h1>
+
+      {/* ---- Responsive header: matches Leads page ---- */}
+      <header className="bg-white/80 backdrop-blur border-b sticky top-0 z-30">
+        <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            {brand.logo ? <img src={brand.logo} alt="" className="h-8 w-auto rounded shrink-0" onError={(e: any) => { e.target.style.display = "none"; }} /> : null}
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight truncate" style={{ color: brand.color }}>{brand.name || "Dashboard"}</h1>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <button onClick={() => { localStorage.clear(); router.push("/login"); }} className="text-sm text-red-500 hover:underline">Logout</button>
+          </div>
         </div>
-        <div className="flex gap-4 items-center">
-          <button onClick={() => router.push("/leads")} className="text-sm text-blue-600 hover:underline">Leads</button>
-          <button onClick={() => router.push("/settings")} className="text-sm text-blue-600 hover:underline">Settings</button>
-          <button onClick={() => { localStorage.clear(); router.push("/login"); }} className="text-sm text-red-500 hover:underline">Logout</button>
-        </div>
-      </div>
+        <nav className="px-2 sm:px-4 flex gap-1 border-t overflow-x-auto">
+          {[
+            { label: "Dashboard", path: "/dashboard", active: true },
+            { label: "Leads", path: "/leads", active: false },
+            { label: "Settings", path: "/settings", active: false },
+          ].map((n) => (
+            <button
+              key={n.path}
+              onClick={() => router.push(n.path)}
+              className={`px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition ${n.active ? "" : "border-transparent text-gray-500 hover:text-gray-800"}`}
+              style={n.active ? { borderColor: brand.color, color: brand.color } : undefined}
+            >
+              {n.label}
+            </button>
+          ))}
+        </nav>
+      </header>
 
       <div className="px-6 lg:px-10 py-6 max-w-[1760px] mx-auto">
         {/* Toolbar */}
