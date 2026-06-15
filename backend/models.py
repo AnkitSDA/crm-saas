@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, Text, DateTime, Float, Index
+from sqlalchemy import Column, String, Boolean, Text, DateTime, Float, Integer, Index
 from sqlalchemy.sql import func
 from database import Base
 import uuid
@@ -72,6 +72,8 @@ class Lead(Base):
     landing_page = Column(String(500), nullable=True)
     referrer     = Column(String(500), nullable=True)
 
+    unsubscribed = Column(Boolean, default=False)   # 👈 ADD (email marketing opt-out)
+
     created_at  = Column(DateTime, server_default=func.now())
     updated_at  = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -101,3 +103,19 @@ class AdSpend(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 Index("ix_spends_tenant_month", AdSpend.tenant_id, AdSpend.month)
+
+
+class Campaign(Base):                                # 👈 ADD (email marketing log)
+    __tablename__ = "campaigns"
+    id           = Column(String(36), primary_key=True, default=gen_uuid)
+    tenant_id    = Column(String(36), nullable=False, index=True)
+    subject      = Column(String(300), nullable=False)
+    body         = Column(Text)
+    recipients   = Column(Integer, default=0)
+    sent_count   = Column(Integer, default=0)
+    failed_count = Column(Integer, default=0)
+    status       = Column(String(20), default="sent")   # sending | sent
+    created_by   = Column(String(255), nullable=True)
+    created_at   = Column(DateTime, server_default=func.now())
+
+Index("ix_campaigns_tenant", Campaign.tenant_id)

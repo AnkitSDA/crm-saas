@@ -35,13 +35,21 @@ export default function AgencyDashboard() {
   const [detail, setDetail] = useState<any>(null);
   const [leads, setLeads] = useState<any[]>([]);
   const [created, setCreated] = useState<any>(null);
-  const [tab, setTab] = useState<"manage" | "leads">("manage");
+  const [tab, setTab] = useState<"manage" | "leads" | "email">("manage");
 
   // editable settings (for open client)
   const [eRate, setERate] = useState(""); const [ePlan, setEPlan] = useState("");
   const [eMode, setEMode] = useState("active"); const [eSources, setESources] = useState<string[]>([]);
   const [savedPw, setSavedPw] = useState<string | null>(null);
   const [eBrand, setEBrand] = useState(""); const [eLogo, setELogo] = useState(""); const [eColor, setEColor] = useState("#4f46e5");
+
+  // email campaign state
+  const [campSubject, setCampSubject] = useState("");
+  const [campBody, setCampBody] = useState("");
+  const [campStatus, setCampStatus] = useState("");
+  const [campRecipients, setCampRecipients] = useState<number | null>(null);
+  const [campSending, setCampSending] = useState(false);
+  const [pastCampaigns, setPastCampaigns] = useState<any[]>([]);
 
   const webhookUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000") + "/webhooks/form";
 
@@ -67,9 +75,14 @@ export default function AgencyDashboard() {
     finally { setLoading(false); }
   }
 
+  function resetCampaign() {
+    setCampSubject(""); setCampBody(""); setCampStatus("");
+    setCampRecipients(null); setPastCampaigns([]);
+  }
+
   async function openClient(id: string) {
-    if (openId === id) { setOpenId(null); setDetail(null); setLeads([]); setSavedPw(null); return; }
-    setOpenId(id); setDetail(null); setLeads([]); setSavedPw(null); setTab("manage");
+    if (openId === id) { setOpenId(null); setDetail(null); setLeads([]); setSavedPw(null); resetCampaign(); return; }
+    setOpenId(id); setDetail(null); setLeads([]); setSavedPw(null); setTab("manage"); resetCampaign();
     try {
       const r = await api.get(`/admin/clients/${id}`);
       setDetail(r.data);
@@ -87,6 +100,42 @@ export default function AgencyDashboard() {
   async function loadLeads(id: string) {
     try { const r = await api.get(`/admin/clients/${id}/leads?limit=200`); setLeads(r.data); }
     catch { toast.error("Failed to load leads"); }
+  }
+
+  async function loadCampaignMeta(id: string) {
+    try {
+      const q = campStatus ? `&status=${campStatus}` : "";
+      const [rec, list] = await Promise.all([
+        api.get(`/admin/campaigns/recipients?tenant_id=${id}${q}`),
+        api.get(`/admin/campaigns?tenant_id=${id}`),
+      ]);
+      setCampRecipients(rec.data.count);
+      setPastCampaigns(list.data);
+    } catch { /* ignore */ }
+  }
+
+  async function refreshRecipients(id: string, status: string) {
+    try {
+      const q = status ? `&status=${status}` : "";
+      const rec = await api.get(`/admin/campaigns/recipients?tenant_id=${id}${q}`);
+      setCampRecipients(rec.data.count);
+    } catch { /* ignore */ }
+  }
+
+  async function sendCampaign(id: string) {
+    if (!campSubject.trim() || !campBody.trim()) { toast.error("Subject aur message dono likho"); return; }
+    if (!confirm(`${campRecipients ?? 0} leads ko yeh email bheja jaye?`)) return;
+    setCampSending(true);
+    try {
+      const r = await api.post("/admin/campaigns/send", {
+        tenant_id: id, subject: campSubject, body: campBody, status: campStatus || null,
+      });
+      toast.success(`Bhej rahe hain ${r.data.recipients} leads ko… (background mein)`);
+      setCampSubject(""); setCampBody("");
+      setTimeout(() => loadCampaignMeta(id), 2000);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Send failed");
+    } finally { setCampSending(false); }
   }
 
   async function saveSettings(id: string) {
@@ -229,6 +278,8 @@ export default function AgencyDashboard() {
                                   className={"text-sm px-3 py-1.5 rounded-lg " + (tab === "manage" ? "bg-indigo-600 text-white" : "bg-white border text-slate-600")}>Manage</button>
                                 <button onClick={() => { setTab("leads"); loadLeads(c.id); }}
                                   className={"text-sm px-3 py-1.5 rounded-lg " + (tab === "leads" ? "bg-indigo-600 text-white" : "bg-white border text-slate-600")}>Leads ({c.leads})</button>
+                                <button onClick={() => { setTab("email"); loadCampaignMeta(c.id); }}
+                                  className={"text-sm px-3 py-1.5 rounded-lg " + (tab === "email" ? "bg-indigo-600 text-white" : "bg-white border text-slate-600")}>📧 Email</button>
                               </div>
 
                               {tab === "manage" && (
@@ -378,6 +429,63 @@ export default function AgencyDashboard() {
                                       ))}
                                     </tbody>
                                   </table>
+                                </div>
+                              )}
+
+                              {tab === "email" && (
+                                <div className="grid md:grid-cols-3 gap-5">
+                                  {/* compose */}
+                                  <div className="md:col-span-2 space-y-3">
+                                    <div className="text-xs font-semibold text-slate-500">COMPOSE EMAIL</div>
+                                    <div>
+                                      <label className="text-xs text-slate-400">Subject</label>
+                                      <input className={inputCls} value={campSubject} onChange={(e) => setCampSubject(e.target.value)} placeholder="e.g. New eco-bag collection 🌿" />
+                                    </div>
+                                    <div>
+                                      <label className="text-xs text-slate-400">Message</label>
+                                      <textarea className={inputCls + " min-h-[170px]"} value={campBody} onChange={(e) => setCampBody(e.target.value)}
+                                        placeholder={"Hi {{name}},\n\nApna message yahan likho...\n\n— Team " + (detail.branding?.brand_name || detail.name || "")} />
+                                      <p className="text-[11px] text-slate-400 mt-1">
+                                        Tip: <code>{"{{name}}"}</code> likho to lead ka naam aa jayega. Har email ke neeche unsubscribe link apne aap lagega.
+                                      </p>
+                                    </div>
+                                    <div className="flex items-end gap-3 flex-wrap">
+                                      <div>
+                                        <label className="text-xs text-slate-400 block">Sirf in leads ko</label>
+                                        <select className="border rounded-lg px-3 py-2 text-sm bg-white" value={campStatus}
+                                          onChange={(e) => { setCampStatus(e.target.value); refreshRecipients(c.id, e.target.value); }}>
+                                          <option value="">All statuses</option>
+                                          {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                                        </select>
+                                      </div>
+                                      <div className="ml-auto text-right">
+                                        <div className="text-2xl font-semibold text-slate-800">{campRecipients ?? "—"}</div>
+                                        <div className="text-[11px] text-slate-400">recipients (email + not unsubscribed)</div>
+                                      </div>
+                                    </div>
+                                    <button onClick={() => sendCampaign(c.id)} disabled={campSending || !campRecipients}
+                                      className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-4 py-2 rounded-lg w-full disabled:opacity-50">
+                                      {campSending ? "Sending…" : `Send to ${campRecipients ?? 0} leads`}</button>
+                                    <p className="text-[11px] text-slate-400">Brevo free tier: ~300 emails/din. Isse zyada par baaki agle din chala jayega.</p>
+                                  </div>
+
+                                  {/* past campaigns */}
+                                  <div className="space-y-2">
+                                    <div className="text-xs font-semibold text-slate-500">PAST CAMPAIGNS</div>
+                                    {pastCampaigns.length === 0 ? <p className="text-xs text-slate-400">Abhi tak koi campaign nahi.</p> : (
+                                      <div className="space-y-2 max-h-[380px] overflow-y-auto">
+                                        {pastCampaigns.map((p) => (
+                                          <div key={p.id} className="bg-white border rounded-lg px-3 py-2">
+                                            <div className="text-sm text-slate-700 truncate">{p.subject}</div>
+                                            <div className="text-[11px] text-slate-400">
+                                              {p.sent_count}/{p.recipients} sent{p.failed_count ? ` · ${p.failed_count} failed` : ""} · {p.status}
+                                            </div>
+                                            <div className="text-[10px] text-slate-300">{p.created_at ? new Date(p.created_at).toLocaleString() : ""}</div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               )}
                             </div>

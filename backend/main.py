@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base
-from routers import auth, leads, webhooks, tenant, admin
+from routers import auth, leads, webhooks, tenant, admin, campaigns
 import models
 import os
 
@@ -28,6 +28,7 @@ app.include_router(leads.router)
 app.include_router(webhooks.router)
 app.include_router(tenant.router)
 app.include_router(admin.router)
+app.include_router(campaigns.router)
 
 @app.get("/")
 def root():
