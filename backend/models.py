@@ -105,7 +105,7 @@ class AdSpend(Base):
 Index("ix_spends_tenant_month", AdSpend.tenant_id, AdSpend.month)
 
 
-class Campaign(Base):                                # 👈 ADD (email marketing log)
+class Campaign(Base):                                # email marketing log
     __tablename__ = "campaigns"
     id           = Column(String(36), primary_key=True, default=gen_uuid)
     tenant_id    = Column(String(36), nullable=False, index=True)
@@ -119,3 +119,17 @@ class Campaign(Base):                                # 👈 ADD (email marketing
     created_at   = Column(DateTime, server_default=func.now())
 
 Index("ix_campaigns_tenant", Campaign.tenant_id)
+
+
+class Payment(Base):                                 # 👈 ADD (manual billing ledger)
+    __tablename__ = "payments"
+    id         = Column(String(36), primary_key=True, default=gen_uuid)
+    tenant_id  = Column(String(36), nullable=False, index=True)
+    period     = Column(String(7), nullable=False)   # YYYY-MM
+    amount     = Column(Float, default=0)
+    method     = Column(String(40), nullable=True)   # UPI | Bank | Cash | ...
+    note       = Column(String(255), nullable=True)
+    created_by = Column(String(255), nullable=True)
+    paid_at    = Column(DateTime, server_default=func.now())
+
+Index("ix_payments_tenant", Payment.tenant_id)

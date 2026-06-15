@@ -4,8 +4,9 @@ from sqlalchemy import func, case, or_
 from passlib.context import CryptContext
 from pydantic import BaseModel
 from typing import Optional
+from datetime import datetime, timedelta
 from database import get_db
-from models import Tenant, User, Lead, AdSpend, gen_api_key
+from models import Tenant, User, Lead, AdSpend, Payment, gen_api_key
 from deps import require_super_admin
 import uuid, secrets
 
@@ -13,6 +14,12 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 pwd = CryptContext(schemes=["bcrypt"])
 
 ALL_SOURCES = "google_ads,meta_ads,website"
+
+
+def _current_period() -> str:
+    # IST month (UTC + 5:30) so month boundary matches India
+    ist = datetime.utcnow() + timedelta(hours=5, minutes=30)
+    return ist.strftime("%Y-%m")
 
 
 # ---------------- schemas ----------------
@@ -44,6 +51,17 @@ class PwReset(BaseModel):
     new_password: Optional[str] = None
 
 
+class MarkPaid(BaseModel):
+    period: Optional[str]   = None   # YYYY-MM, default = current month
+    amount: Optional[float] = None   # default = tenant monthly_rate
+    method: Optional[str]   = None   # UPI | Bank | Cash
+    note:   Optional[str]   = None
+
+
+class MarkUnpaid(BaseModel):
+    mode: Optional[str] = "block_leads"   # block_leads | block_all
+
+
 # ---------------- helpers ----------------
 def _lead_stats(db: Session):
     rows = (
@@ -62,6 +80,16 @@ def _lead_stats(db: Session):
 def _spend_stats(db: Session):
     rows = db.query(AdSpend.tenant_id, func.sum(AdSpend.amount)).group_by(AdSpend.tenant_id).all()
     return {r[0]: float(r[1] or 0) for r in rows}
+
+
+def _paid_set(db: Session, period: str):
+    rows = db.query(Payment.tenant_id).filter(Payment.period == period).distinct().all()
+    return {r[0] for r in rows}
+
+
+def _collected(db: Session, period: str) -> float:
+    row = db.query(func.sum(Payment.amount)).filter(Payment.period == period).first()
+    return float(row[0] or 0) if row and row[0] is not None else 0.0
 
 
 def _rate(t: Tenant) -> float:
@@ -89,17 +117,22 @@ def _branding(t: Tenant) -> dict:
 def list_clients(admin: User = Depends(require_super_admin), db: Session = Depends(get_db)):
     tenants = db.query(Tenant).order_by(Tenant.created_at.desc()).all()
     ls, ss = _lead_stats(db), _spend_stats(db)
+    period = _current_period()
+    paid_set = _paid_set(db, period)
     clients = []
-    tot = {"clients": 0, "leads": 0, "won": 0, "revenue": 0.0, "spend": 0.0, "mrr": 0.0}
+    tot = {"clients": 0, "leads": 0, "won": 0, "revenue": 0.0, "spend": 0.0,
+           "mrr": 0.0, "collected": _collected(db, period), "paid_count": 0}
     for t in tenants:
         leads, won, revenue = ls.get(t.id, (0, 0, 0.0))
         spend = ss.get(t.id, 0.0)
         rate = _rate(t)
+        is_paid = t.id in paid_set
         clients.append({
             "id": t.id, "name": t.name, "slug": t.slug, "plan": t.plan,
             "is_active": t.is_active, "monthly_rate": rate,
             "enabled_sources": _sources(t),
             "access_mode": _mode(t),
+            "paid_this_month": is_paid,
             "leads": leads, "won": won, "revenue": revenue, "spend": spend,
             "roas": (revenue / spend) if spend > 0 else None,
             "created_at": t.created_at,
@@ -107,8 +140,9 @@ def list_clients(admin: User = Depends(require_super_admin), db: Session = Depen
         tot["clients"] += 1; tot["leads"] += leads; tot["won"] += won
         tot["revenue"] += revenue; tot["spend"] += spend
         if t.is_active: tot["mrr"] += rate
+        if is_paid: tot["paid_count"] += 1
     tot["roas"] = (tot["revenue"] / tot["spend"]) if tot["spend"] > 0 else None
-    return {"totals": tot, "clients": clients}
+    return {"totals": tot, "clients": clients, "period": period}
 
 
 @router.post("/clients")
@@ -156,6 +190,11 @@ def client_detail(tenant_id: str, admin: User = Depends(require_super_admin), db
     login = (db.query(User).filter(User.tenant_id == tenant_id, User.role == "tenant_admin")
              .order_by(User.created_at).first())
 
+    period = _current_period()
+    paid_this_month = (db.query(Payment.id)
+                       .filter(Payment.tenant_id == tenant_id, Payment.period == period)
+                       .first() is not None)
+
     return {
         "id": t.id, "name": t.name, "slug": t.slug, "api_key": t.api_key,
         "plan": t.plan, "is_active": t.is_active, "monthly_rate": _rate(t),
@@ -164,6 +203,8 @@ def client_detail(tenant_id: str, admin: User = Depends(require_super_admin), db
         "branding": _branding(t),
         "login_email": login.email if login else None,
         "sources": sources,
+        "current_period": period,
+        "paid_this_month": paid_this_month,
     }
 
 
@@ -218,6 +259,66 @@ def reset_password(tenant_id: str, data: PwReset, admin: User = Depends(require_
     return {"email": user.email, "new_password": new_pw}
 
 
+# ---------------- billing / payments ----------------
+@router.get("/clients/{tenant_id}/payments")
+def list_payments(tenant_id: str, admin: User = Depends(require_super_admin), db: Session = Depends(get_db)):
+    rows = (db.query(Payment).filter(Payment.tenant_id == tenant_id)
+            .order_by(Payment.paid_at.desc()).limit(100).all())
+    return [{
+        "id": p.id, "period": p.period, "amount": p.amount,
+        "method": p.method, "note": p.note,
+        "created_by": p.created_by, "paid_at": p.paid_at,
+    } for p in rows]
+
+
+@router.post("/clients/{tenant_id}/mark-paid")
+def mark_paid(tenant_id: str, data: MarkPaid, admin: User = Depends(require_super_admin), db: Session = Depends(get_db)):
+    t = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Client not found")
+    period = (data.period or _current_period()).strip()
+    amount = data.amount if data.amount is not None else _rate(t)
+    pay = Payment(id=str(uuid.uuid4()), tenant_id=tenant_id, period=period,
+                  amount=float(amount or 0), method=data.method, note=data.note,
+                  created_by=getattr(admin, "email", None))
+    db.add(pay)
+    # auto-activate access
+    try:
+        t.access_mode = "active"
+    except Exception:
+        pass
+    t.is_active = True
+    db.commit()
+    return {"ok": True, "period": period, "amount": float(amount or 0)}
+
+
+@router.post("/clients/{tenant_id}/mark-unpaid")
+def mark_unpaid(tenant_id: str, data: MarkUnpaid, admin: User = Depends(require_super_admin), db: Session = Depends(get_db)):
+    t = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Client not found")
+    mode = (data.mode or "block_leads")
+    if mode not in ("block_leads", "block_all"):
+        mode = "block_leads"
+    try:
+        t.access_mode = mode
+    except Exception:
+        pass
+    if mode == "block_all":
+        t.is_active = False
+    db.commit()
+    return {"ok": True, "access_mode": mode}
+
+
+@router.delete("/payments/{payment_id}")
+def delete_payment(payment_id: str, admin: User = Depends(require_super_admin), db: Session = Depends(get_db)):
+    p = db.query(Payment).filter(Payment.id == payment_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    db.delete(p); db.commit()
+    return {"ok": True}
+
+
 # ---------------- client leads (admin view + manage) ----------------
 @router.get("/clients/{tenant_id}/leads")
 def client_leads(tenant_id: str,
@@ -269,6 +370,10 @@ def delete_client(tenant_id: str, admin: User = Depends(require_super_admin), db
     deleted_leads = db.query(Lead).filter(Lead.tenant_id == tenant_id).delete(synchronize_session=False)
     try:
         db.query(AdSpend).filter(AdSpend.tenant_id == tenant_id).delete(synchronize_session=False)
+    except Exception:
+        pass
+    try:
+        db.query(Payment).filter(Payment.tenant_id == tenant_id).delete(synchronize_session=False)
     except Exception:
         pass
     db.query(User).filter(User.tenant_id == tenant_id).delete(synchronize_session=False)

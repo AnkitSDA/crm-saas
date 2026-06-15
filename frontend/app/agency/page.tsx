@@ -7,12 +7,14 @@ import api from "@/lib/api";
 interface ClientRow {
   id: string; name: string; slug: string; plan: string;
   is_active: boolean; monthly_rate: number; enabled_sources: string;
+  paid_this_month?: boolean;
   leads: number; won: number; revenue: number; spend: number;
   roas: number | null; created_at: string;
 }
 interface Totals {
   clients: number; leads: number; won: number;
   revenue: number; spend: number; mrr: number; roas: number | null;
+  collected?: number; paid_count?: number;
 }
 
 const SOURCES = [
@@ -35,7 +37,7 @@ export default function AgencyDashboard() {
   const [detail, setDetail] = useState<any>(null);
   const [leads, setLeads] = useState<any[]>([]);
   const [created, setCreated] = useState<any>(null);
-  const [tab, setTab] = useState<"manage" | "leads" | "email">("manage");
+  const [tab, setTab] = useState<"manage" | "leads" | "email" | "billing">("manage");
 
   // editable settings (for open client)
   const [eRate, setERate] = useState(""); const [ePlan, setEPlan] = useState("");
@@ -50,6 +52,13 @@ export default function AgencyDashboard() {
   const [campRecipients, setCampRecipients] = useState<number | null>(null);
   const [campSending, setCampSending] = useState(false);
   const [pastCampaigns, setPastCampaigns] = useState<any[]>([]);
+
+  // billing state
+  const [payments, setPayments] = useState<any[]>([]);
+  const [payAmount, setPayAmount] = useState("");
+  const [payMethod, setPayMethod] = useState("UPI");
+  const [payNote, setPayNote] = useState("");
+  const [payBusy, setPayBusy] = useState(false);
 
   const webhookUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000") + "/webhooks/form";
 
@@ -75,14 +84,15 @@ export default function AgencyDashboard() {
     finally { setLoading(false); }
   }
 
-  function resetCampaign() {
-    setCampSubject(""); setCampBody(""); setCampStatus("");
-    setCampRecipients(null); setPastCampaigns([]);
+  function resetOpenState() {
+    setDetail(null); setLeads([]); setSavedPw(null);
+    setCampSubject(""); setCampBody(""); setCampStatus(""); setCampRecipients(null); setPastCampaigns([]);
+    setPayments([]); setPayAmount(""); setPayNote(""); setPayMethod("UPI");
   }
 
   async function openClient(id: string) {
-    if (openId === id) { setOpenId(null); setDetail(null); setLeads([]); setSavedPw(null); resetCampaign(); return; }
-    setOpenId(id); setDetail(null); setLeads([]); setSavedPw(null); setTab("manage"); resetCampaign();
+    if (openId === id) { setOpenId(null); resetOpenState(); return; }
+    setOpenId(id); resetOpenState(); setTab("manage");
     try {
       const r = await api.get(`/admin/clients/${id}`);
       setDetail(r.data);
@@ -94,6 +104,7 @@ export default function AgencyDashboard() {
       setEBrand(b.brand_name || r.data.name || "");
       setELogo(b.logo_url || "");
       setEColor(b.accent_color || "#4f46e5");
+      setPayAmount(String(r.data.monthly_rate || 0));
     } catch { toast.error("Failed to load client"); }
   }
 
@@ -136,6 +147,51 @@ export default function AgencyDashboard() {
     } catch (e: any) {
       toast.error(e?.response?.data?.detail || "Send failed");
     } finally { setCampSending(false); }
+  }
+
+  // ---- billing ----
+  async function loadBilling(id: string) {
+    try { const r = await api.get(`/admin/clients/${id}/payments`); setPayments(r.data); }
+    catch { toast.error("Failed to load payments"); }
+  }
+
+  async function refreshDetail(id: string) {
+    try { const r = await api.get(`/admin/clients/${id}`); setDetail(r.data); } catch { /* ignore */ }
+  }
+
+  async function markPaid(id: string) {
+    setPayBusy(true);
+    try {
+      await api.post(`/admin/clients/${id}/mark-paid`, {
+        amount: parseFloat(payAmount) || 0,
+        method: payMethod || null,
+        note: payNote || null,
+      });
+      toast.success("Paid mark ho gaya — client ACTIVE");
+      setPayNote("");
+      await loadBilling(id); await refreshDetail(id); load();
+    } catch (e: any) { toast.error(e?.response?.data?.detail || "Failed"); }
+    finally { setPayBusy(false); }
+  }
+
+  async function markUnpaid(id: string, mode: string) {
+    const msg = mode === "block_all"
+      ? "Client ko FULLY block karein? (login + naye leads dono band)"
+      : "Client ko unpaid mark karein? (naye leads band, login chalu rahega — payment leverage)";
+    if (!confirm(msg)) return;
+    setPayBusy(true);
+    try {
+      await api.post(`/admin/clients/${id}/mark-unpaid`, { mode });
+      toast.success(mode === "block_all" ? "Fully blocked" : "Leads blocked (unpaid)");
+      await refreshDetail(id); load();
+    } catch (e: any) { toast.error(e?.response?.data?.detail || "Failed"); }
+    finally { setPayBusy(false); }
+  }
+
+  async function deletePayment(id: string, paymentId: string) {
+    if (!confirm("Yeh payment entry delete karein? (galat entry sudharne ke liye)")) return;
+    try { await api.delete(`/admin/payments/${paymentId}`); await loadBilling(id); await refreshDetail(id); load(); }
+    catch { toast.error("Delete failed"); }
   }
 
   async function saveSettings(id: string) {
@@ -206,6 +262,7 @@ export default function AgencyDashboard() {
     { label: "Clients", value: totals.clients, sub: `${clients.filter(c => c.is_active).length} active` },
     { label: "Total Leads", value: totals.leads, sub: `${totals.won} won` },
     { label: "MRR", value: inr(totals.mrr), sub: "monthly recurring" },
+    { label: "Collected (mo)", value: inr(totals.collected || 0), sub: `${totals.paid_count || 0}/${totals.clients} paid` },
     { label: "Revenue tracked", value: inr(totals.revenue), sub: "won deals" },
     { label: "Ad Spend", value: inr(totals.spend), sub: "all clients" },
     { label: "Blended ROAS", value: roasTxt(totals.roas), sub: "revenue / spend" },
@@ -229,7 +286,7 @@ export default function AgencyDashboard() {
       </div>
 
       <div className="max-w-[1500px] mx-auto px-6 py-6">
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
           {kpis.map((k) => (
             <div key={k.label} className="bg-white rounded-xl border border-slate-200 p-4">
               <div className="text-xs text-slate-400">{k.label}</div>
@@ -244,12 +301,12 @@ export default function AgencyDashboard() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
-                <tr>{["Client", "Leads", "Won", "Revenue", "Spend", "ROAS", "Rate/mo", "Status", ""].map(h => (
+                <tr>{["Client", "Leads", "Won", "Revenue", "Spend", "ROAS", "Rate/mo", "This Month", "Status", ""].map(h => (
                   <th key={h} className="text-left font-medium px-4 py-2.5 whitespace-nowrap">{h}</th>))}</tr>
               </thead>
               <tbody>
                 {clients.length === 0 && (
-                  <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-400">
+                  <tr><td colSpan={10} className="px-4 py-8 text-center text-slate-400">
                     No clients yet. Click “+ Add Client”.</td></tr>)}
                 {clients.map((c) => (
                   <>
@@ -261,6 +318,11 @@ export default function AgencyDashboard() {
                       <td className="px-4 py-3">{inr(c.spend)}</td>
                       <td className="px-4 py-3 font-medium text-emerald-600">{roasTxt(c.roas)}</td>
                       <td className="px-4 py-3">{inr(c.monthly_rate)}</td>
+                      <td className="px-4 py-3">
+                        <span className={"text-xs px-2 py-0.5 rounded-full " +
+                          (c.paid_this_month ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600")}>
+                          {c.paid_this_month ? "✓ paid" : "unpaid"}</span>
+                      </td>
                       <td className="px-4 py-3"><span className={"text-xs px-2 py-0.5 rounded-full " +
                         (c.is_active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500")}>
                         {c.is_active ? "active" : "inactive"}</span></td>
@@ -269,17 +331,19 @@ export default function AgencyDashboard() {
                     </tr>
                     {openId === c.id && (
                       <tr className="bg-slate-50/70">
-                        <td colSpan={9} className="px-6 py-4">
+                        <td colSpan={10} className="px-6 py-4">
                           {!detail ? <div className="text-slate-400 text-sm">Loading…</div> : (
                             <div>
                               {/* tabs */}
-                              <div className="flex gap-2 mb-4">
+                              <div className="flex gap-2 mb-4 flex-wrap">
                                 <button onClick={() => setTab("manage")}
                                   className={"text-sm px-3 py-1.5 rounded-lg " + (tab === "manage" ? "bg-indigo-600 text-white" : "bg-white border text-slate-600")}>Manage</button>
                                 <button onClick={() => { setTab("leads"); loadLeads(c.id); }}
                                   className={"text-sm px-3 py-1.5 rounded-lg " + (tab === "leads" ? "bg-indigo-600 text-white" : "bg-white border text-slate-600")}>Leads ({c.leads})</button>
                                 <button onClick={() => { setTab("email"); loadCampaignMeta(c.id); }}
                                   className={"text-sm px-3 py-1.5 rounded-lg " + (tab === "email" ? "bg-indigo-600 text-white" : "bg-white border text-slate-600")}>📧 Email</button>
+                                <button onClick={() => { setTab("billing"); loadBilling(c.id); }}
+                                  className={"text-sm px-3 py-1.5 rounded-lg " + (tab === "billing" ? "bg-indigo-600 text-white" : "bg-white border text-slate-600")}>💳 Billing</button>
                               </div>
 
                               {tab === "manage" && (
@@ -483,6 +547,84 @@ export default function AgencyDashboard() {
                                             <div className="text-[10px] text-slate-300">{p.created_at ? new Date(p.created_at).toLocaleString() : ""}</div>
                                           </div>
                                         ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {tab === "billing" && (
+                                <div className="grid md:grid-cols-3 gap-5">
+                                  {/* mark paid / unpaid */}
+                                  <div className="md:col-span-1 space-y-3">
+                                    <div className="text-xs font-semibold text-slate-500">THIS MONTH ({detail.current_period})</div>
+                                    <div className={"rounded-lg border px-3 py-3 " + (detail.paid_this_month ? "bg-emerald-50 border-emerald-200" : "bg-rose-50 border-rose-200")}>
+                                      <div className="text-sm font-semibold">
+                                        <span className={detail.paid_this_month ? "text-emerald-700" : "text-rose-600"}>
+                                          {detail.paid_this_month ? "✓ Paid" : "● Unpaid"}
+                                        </span>
+                                      </div>
+                                      <div className="text-[11px] text-slate-500 mt-0.5">Access: {detail.access_mode}</div>
+                                    </div>
+
+                                    <div className="bg-white border rounded-lg p-3 space-y-2">
+                                      <div className="text-xs font-semibold text-slate-500">MARK PAID</div>
+                                      <div>
+                                        <label className="text-[11px] text-slate-400">Amount (₹)</label>
+                                        <input className={inputCls} type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
+                                      </div>
+                                      <div>
+                                        <label className="text-[11px] text-slate-400">Method</label>
+                                        <select className="border rounded-lg px-3 py-2 text-sm w-full bg-white" value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
+                                          <option>UPI</option><option>Bank</option><option>Cash</option><option>Other</option>
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <label className="text-[11px] text-slate-400">Note (optional)</label>
+                                        <input className={inputCls} value={payNote} onChange={(e) => setPayNote(e.target.value)} placeholder="e.g. June invoice" />
+                                      </div>
+                                      <button onClick={() => markPaid(c.id)} disabled={payBusy}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-4 py-2 rounded-lg w-full disabled:opacity-50">
+                                        {payBusy ? "…" : "✓ Mark Paid (activate)"}</button>
+                                    </div>
+
+                                    <div className="bg-white border rounded-lg p-3 space-y-2">
+                                      <div className="text-xs font-semibold text-slate-500">UNPAID / BLOCK</div>
+                                      <button onClick={() => markUnpaid(c.id, "block_leads")} disabled={payBusy}
+                                        className="border border-amber-300 text-amber-700 hover:bg-amber-50 text-sm px-3 py-2 rounded-lg w-full">
+                                        📥 Block leads (login chalu)</button>
+                                      <button onClick={() => markUnpaid(c.id, "block_all")} disabled={payBusy}
+                                        className="border border-red-300 text-red-600 hover:bg-red-50 text-sm px-3 py-2 rounded-lg w-full">
+                                        🔴 Block all (login + leads)</button>
+                                      <p className="text-[10px] text-slate-400">Payment aate hi “Mark Paid” se wapas active ho jayega.</p>
+                                    </div>
+                                  </div>
+
+                                  {/* payment history */}
+                                  <div className="md:col-span-2 space-y-2">
+                                    <div className="text-xs font-semibold text-slate-500">PAYMENT HISTORY</div>
+                                    {payments.length === 0 ? <p className="text-xs text-slate-400">Abhi tak koi payment record nahi.</p> : (
+                                      <div className="bg-white border rounded-lg overflow-hidden">
+                                        <table className="w-full text-sm">
+                                          <thead className="bg-slate-50 text-slate-400 text-xs uppercase">
+                                            <tr>{["Month", "Amount", "Method", "Note", "Date", ""].map(h => (
+                                              <th key={h} className="text-left font-medium px-3 py-2">{h}</th>))}</tr>
+                                          </thead>
+                                          <tbody>
+                                            {payments.map((p) => (
+                                              <tr key={p.id} className="border-t">
+                                                <td className="px-3 py-2 text-slate-700">{p.period}</td>
+                                                <td className="px-3 py-2 font-medium text-emerald-700">{inr(p.amount)}</td>
+                                                <td className="px-3 py-2 text-slate-500">{p.method || "—"}</td>
+                                                <td className="px-3 py-2 text-slate-500 truncate max-w-[160px]" title={p.note || ""}>{p.note || "—"}</td>
+                                                <td className="px-3 py-2 text-slate-400 text-xs">{p.paid_at ? new Date(p.paid_at).toLocaleDateString() : ""}</td>
+                                                <td className="px-3 py-2">
+                                                  <button onClick={() => deletePayment(c.id, p.id)} className="text-xs text-red-500 hover:underline">delete</button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
                                       </div>
                                     )}
                                   </div>
