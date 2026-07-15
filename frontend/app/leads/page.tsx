@@ -7,11 +7,11 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 
 const statusColors: Record<string, string> = {
-  new: "bg-blue-100 text-blue-700",
-  contacted: "bg-yellow-100 text-yellow-700",
-  qualified: "bg-purple-100 text-purple-700",
-  won: "bg-green-100 text-green-700",
-  lost: "bg-red-100 text-red-700",
+  new: "bg-blue-50 text-blue-700 border border-blue-200",
+  contacted: "bg-amber-50 text-amber-700 border border-amber-200",
+  qualified: "bg-violet-50 text-violet-700 border border-violet-200",
+  won: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  lost: "bg-red-50 text-red-700 border border-red-200",
 };
 
 interface Lead {
@@ -73,11 +73,11 @@ function normalizePhone(phone: string | null): string | null {
 }
 
 const SOURCE_TABS = [
-  { id: "",           label: "All",         emoji: "📋" },
-  { id: "google_ads", label: "Google Ads",  emoji: "🟢" },
-  { id: "meta_ads",   label: "Meta Ads",    emoji: "🔵" },
-  { id: "website",    label: "Website",     emoji: "🌐" },
-  { id: "manual",     label: "Manual",      emoji: "✍️" },
+  { id: "",           label: "All" },
+  { id: "google_ads", label: "Google Ads", dot: "#059669" },
+  { id: "meta_ads",   label: "Meta Ads",   dot: "#2563eb" },
+  { id: "website",    label: "Website",    dot: "#64748b" },
+  { id: "manual",     label: "Manual",     dot: "#d97706" },
 ];
 
 // Tabs that are always shown regardless of enabled_sources
@@ -85,6 +85,28 @@ const ALWAYS_TABS = ["", "manual"];
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/* ---------- Inline SVG icons (shared style with dashboard) ---------- */
+const ic = {
+  dashboard: <path d="M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z" />,
+  leads:     <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />,
+  settings:  <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></>,
+  logout:    <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5M21 12H9" /></>,
+  bell:      <><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></>,
+  calendar:  <><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>,
+  clock:     <><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></>,
+  phone:     <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />,
+  mail:      <><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></>,
+  chat:      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
+  trash:     <><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></>,
+  note:      <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" /></>,
+};
+function Icon({ d, size = 15, className = "" }: { d: React.ReactNode; size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+      strokeLinecap="round" strokeLinejoin="round" className={className}>{d}</svg>
+  );
+}
 
 // Format an ISO datetime for the datetime-local input (local time, no seconds)
 function toLocalInput(iso: string | null | undefined): string {
@@ -152,39 +174,39 @@ function DateRangePicker({ range, onChange }: { range: RangeSel; onChange: (r: R
   function inR(d: Date) { if (!tStart || !effEnd) return false; const lo = tStart < effEnd ? tStart : effEnd, hi = tStart < effEnd ? effEnd : tStart; return d > lo && d < hi; }
   return (
     <div className="relative inline-block">
-      <button onClick={openPicker} className="flex items-center gap-2 border rounded-lg px-3 py-2 text-sm bg-white font-medium hover:border-gray-400 hover:shadow-sm transition">
-        <span>📅</span><span>{range.label}</span><span className="text-gray-400">▾</span>
+      <button onClick={openPicker} className="flex items-center gap-2 border border-slate-300 rounded px-3 py-1.5 text-[13px] bg-white font-medium text-slate-700 hover:border-slate-400 transition">
+        <Icon d={ic.calendar} size={13} className="text-slate-500" /><span>{range.label}</span><span className="text-slate-400 text-[10px]">▾</span>
       </button>
       {open && (<>
         <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-        <div className="absolute z-50 mt-2 bg-white border rounded-2xl shadow-2xl flex overflow-hidden" style={{ minWidth: 480 }}>
-          <div className="w-40 border-r py-2 max-h-[340px] overflow-y-auto">
+        <div className="absolute z-50 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl flex overflow-hidden" style={{ minWidth: 480 }}>
+          <div className="w-40 border-r border-slate-100 py-2 max-h-[340px] overflow-y-auto">
             {presets.map((p) => (
               <button key={p.id} onClick={() => pickPreset(p.id)}
-                className={`w-full text-left px-4 py-2 text-sm hover:bg-blue-50 transition ${range.label === p.label ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700"}`}>{p.label}</button>
+                className={`w-full text-left px-4 py-1.5 text-[13px] hover:bg-slate-50 transition ${range.label === p.label ? "bg-slate-100 text-slate-900 font-medium" : "text-slate-600"}`}>{p.label}</button>
             ))}
           </div>
           <div className="p-4" style={{ width: 320 }}>
             <div className="flex items-center justify-between mb-3">
-              <button onClick={() => setView(new Date(y, mo - 1, 1))} className="w-7 h-7 rounded hover:bg-gray-100 text-gray-600">‹</button>
-              <span className="text-sm font-semibold">{MONTHS[mo]} {y}</span>
-              <button onClick={() => setView(new Date(y, mo + 1, 1))} className="w-7 h-7 rounded hover:bg-gray-100 text-gray-600">›</button>
+              <button onClick={() => setView(new Date(y, mo - 1, 1))} className="w-7 h-7 rounded hover:bg-slate-100 text-slate-600">‹</button>
+              <span className="text-[13px] font-semibold text-slate-800">{MONTHS[mo]} {y}</span>
+              <button onClick={() => setView(new Date(y, mo + 1, 1))} className="w-7 h-7 rounded hover:bg-slate-100 text-slate-600">›</button>
             </div>
             <div className="grid grid-cols-7 gap-y-1 text-center">
-              {WEEKDAYS.map((w, i) => (<div key={i} className="text-[11px] text-gray-400 font-medium pb-1">{w}</div>))}
+              {WEEKDAYS.map((w, i) => (<div key={i} className="text-[10px] text-slate-400 font-medium pb-1">{w}</div>))}
               {cells.map((d, i) => {
                 if (!d) return <div key={i} />;
                 const isStart = tStart && sameDay(d, tStart), isEnd = tEnd && sameDay(d, tEnd);
                 const future = d > today, between = inR(d);
-                let cls = "text-gray-700 hover:bg-gray-100";
-                if (future) cls = "text-gray-300 cursor-default";
-                else if (isStart || isEnd) cls = "bg-blue-600 text-white font-semibold";
-                else if (between) cls = "bg-blue-100 text-blue-800";
+                let cls = "text-slate-700 hover:bg-slate-100";
+                if (future) cls = "text-slate-300 cursor-default";
+                else if (isStart || isEnd) cls = "bg-slate-800 text-white font-semibold";
+                else if (between) cls = "bg-slate-100 text-slate-800";
                 return (<button key={i} disabled={future} onClick={() => clickDay(d)} onMouseEnter={() => setHover(d)}
-                  className={`mx-auto w-8 h-8 rounded-full text-xs flex items-center justify-center transition ${cls}`}>{d.getDate()}</button>);
+                  className={`mx-auto w-8 h-8 rounded text-xs flex items-center justify-center transition ${cls}`}>{d.getDate()}</button>);
               })}
             </div>
-            {tStart && !tEnd && <p className="text-[11px] text-gray-400 mt-3 text-center">Select end date</p>}
+            {tStart && !tEnd && <p className="text-[10px] text-slate-400 mt-3 text-center">Select end date</p>}
           </div>
         </div>
       </>)}
@@ -232,6 +254,7 @@ export default function LeadsPage() {
       router.push("/login");
       return;
     }
+    if (localStorage.getItem("role") === "super_admin") { router.push("/agency"); return; }
     fetchTenant();
     fetchLeads();
     fetchSourceCounts();
@@ -437,12 +460,6 @@ export default function LeadsPage() {
     return sourceCounts[tabId] || 0;
   }
 
-  function tabClasses(tabId: string) {
-    const isActive = sourceFilter === tabId;
-    if (isActive) return "bg-gray-900 text-white border-gray-900";
-    return "bg-white text-gray-700 border-gray-200 hover:border-gray-400 hover:bg-gray-50";
-  }
-
   // Only show tabs the agency has enabled (All + Manual always shown).
   const visibleTabs = SOURCE_TABS.filter(
     (t) => ALWAYS_TABS.includes(t.id) || enabledSources.includes(t.id)
@@ -456,10 +473,10 @@ export default function LeadsPage() {
     const now = new Date();
     const isOverdue = due < now;
     const isToday = due.toDateString() === now.toDateString();
-    let cls = "bg-gray-100 text-gray-600";
-    let label = "⏰ " + due.toLocaleDateString();
-    if (isOverdue) { cls = "bg-red-100 text-red-700"; label = "⏰ Overdue"; }
-    else if (isToday) { cls = "bg-amber-100 text-amber-800"; label = "⏰ Today"; }
+    let cls = "bg-slate-100 text-slate-600";
+    let label = due.toLocaleDateString();
+    if (isOverdue) { cls = "bg-red-50 text-red-700 border border-red-200"; label = "Overdue"; }
+    else if (isToday) { cls = "bg-amber-50 text-amber-800 border border-amber-200"; label = "Due today"; }
     return <span className={`ml-2 inline-block text-[10px] px-1.5 py-0.5 rounded ${cls}`}>{label}</span>;
   }
 
@@ -474,7 +491,7 @@ export default function LeadsPage() {
   }).length;
 
   if (loading)
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+    return <div className="flex items-center justify-center min-h-screen text-slate-400 text-sm bg-[#f4f5f7]">Loading...</div>;
 
   const duplicateIds = buildDuplicateMap();
 
@@ -490,7 +507,7 @@ export default function LeadsPage() {
   function dayLabel(iso: string): string {
     const c0 = startOfDay(new Date(iso));
     if (c0.getTime() === _today0.getTime()) return "Today";
-    if (c0.getTime() === _yest0.getTime()) return "Yestarday";
+    if (c0.getTime() === _yest0.getTime()) return "Yesterday";
     return new Date(iso).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
   }
 
@@ -501,315 +518,340 @@ export default function LeadsPage() {
   const isAllTime = range.label === "All time";
   let lastDayLabel: string | null = null;
 
+  const logout = () => { localStorage.clear(); router.push("/login"); };
+  const nav = [
+    { label: "Dashboard", path: "/dashboard", icon: ic.dashboard },
+    { label: "Leads", path: "/leads", icon: ic.leads },
+    { label: "Settings", path: "/settings", icon: ic.settings },
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="h-1 w-full" style={{ backgroundColor: brand.color }} />
-
-      {/* ---- Responsive header: brand + bell/logout on top, nav row below ---- */}
-      <header className="bg-white border-b sticky top-0 z-20">
-        <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            {brand.logo ? <img src={brand.logo} alt="" className="h-8 w-auto rounded shrink-0" onError={(e: any) => { e.target.style.display = "none"; }} /> : null}
-            <h1 className="text-lg sm:text-xl font-semibold truncate" style={{ color: brand.color }}>{brand.name || "Leads"}</h1>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            {/* Reminder bell */}
-            <button
-              onClick={() => setShowReminders((v) => !v)}
-              className="relative text-gray-600 hover:text-gray-900"
-              title="Follow-up reminders"
-            >
-              🔔
-              {reminders.length > 0 && (
-                <span className={`absolute -top-2 -right-2 text-[10px] text-white rounded-full px-1.5 py-0.5 ${overdueCount > 0 ? "bg-red-600" : "bg-amber-500"}`}>
-                  {reminders.length}
-                </span>
-              )}
-            </button>
-            <button onClick={() => { localStorage.clear(); router.push("/login"); }} className="text-sm text-red-500 hover:underline">Logout</button>
-          </div>
+    <div className="min-h-screen bg-[#f4f5f7] flex">
+      {/* Sidebar — desktop */}
+      <aside className="hidden lg:flex flex-col w-52 shrink-0 bg-[#1b2431] text-slate-300 sticky top-0 h-screen">
+        <div className="px-4 py-4 border-b border-white/10 flex items-center gap-2.5 min-h-[57px]">
+          {brand.logo ? <img src={brand.logo} alt="" className="h-7 w-7 rounded object-cover shrink-0" onError={(e: any) => { e.target.style.display = "none"; }} /> : null}
+          <span className="text-[13px] font-semibold text-white truncate leading-tight">{brand.name || "CRM"}</span>
         </div>
-        <nav className="px-2 sm:px-4 flex gap-1 border-t overflow-x-auto">
-          {[
-            { label: "Dashboard", path: "/dashboard", active: false },
-            { label: "Leads", path: "/leads", active: true },
-            { label: "Settings", path: "/settings", active: false },
-          ].map((n) => (
-            <button
-              key={n.path}
-              onClick={() => router.push(n.path)}
-              className={`px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition ${n.active ? "" : "border-transparent text-gray-500 hover:text-gray-800"}`}
-              style={n.active ? { borderColor: brand.color, color: brand.color } : undefined}
-            >
-              {n.label}
-            </button>
-          ))}
+        <nav className="flex-1 py-3">
+          {nav.map((n) => {
+            const isActive = n.path === "/leads";
+            return (
+              <button key={n.path} onClick={() => router.push(n.path)}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-[13px] font-medium transition border-l-2 ${isActive ? "bg-white/10 text-white" : "border-transparent text-slate-400 hover:bg-white/5 hover:text-slate-200"}`}
+                style={isActive ? { borderColor: brand.color === "#111827" ? "#3b82f6" : brand.color } : undefined}>
+                <Icon d={n.icon} size={15} />{n.label}
+              </button>
+            );
+          })}
         </nav>
-      </header>
+        <div className="border-t border-white/10 p-3">
+          <button onClick={logout} className="w-full flex items-center gap-3 px-2 py-2 text-[13px] text-slate-400 hover:text-white rounded hover:bg-white/5 transition">
+            <Icon d={ic.logout} size={15} />Sign out
+          </button>
+          <p className="text-[10px] text-slate-500 px-2 pt-2">Powered by Brandbanalo</p>
+        </div>
+      </aside>
 
-      <div className="p-6">
-        {/* Reminders banner */}
-        {(overdueCount > 0 || todayCount > 0) && (
-          <div
-            className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 cursor-pointer"
-            onClick={() => setShowReminders((v) => !v)}
-          >
-            <span className="text-sm text-amber-900 font-medium">
-              ⏰ {overdueCount > 0 && <span className="text-red-700">{overdueCount} overdue</span>}
-              {overdueCount > 0 && todayCount > 0 && " · "}
-              {todayCount > 0 && <span>{todayCount} due today</span>}
-              {" "}— click to view follow-ups
-            </span>
-          </div>
-        )}
-
-        {/* Reminders panel */}
-        {showReminders && (
-          <div className="mb-4 rounded-lg border bg-white p-4">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="font-semibold text-sm">Pending Follow-ups ({reminders.length})</h3>
-              <button onClick={() => setShowReminders(false)} className="text-xs text-gray-500 hover:underline">Close</button>
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* Mobile header */}
+        <header className="lg:hidden bg-[#1b2431] text-white sticky top-0 z-30">
+          <div className="px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-2.5 min-w-0">
+              {brand.logo ? <img src={brand.logo} alt="" className="h-7 w-7 rounded object-cover shrink-0" onError={(e: any) => { e.target.style.display = "none"; }} /> : null}
+              <span className="text-sm font-semibold truncate">{brand.name || "CRM"}</span>
             </div>
-            {reminders.length === 0 ? (
-              <p className="text-sm text-gray-400 py-2">No follow-ups scheduled. Set one from any lead's detail view.</p>
-            ) : (
-              <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                {reminders.map((r) => {
-                  const due = r.follow_up_at ? new Date(r.follow_up_at) : null;
-                  const overdue = isReminderOverdue(r);
-                  return (
-                    <div
-                      key={r.id}
-                      className={`flex items-center justify-between text-sm px-3 py-2 rounded ${overdue ? "bg-red-50" : "bg-gray-50"}`}
-                    >
-                      <div>
-                        <span className="font-medium">{r.name || "Unknown"}</span>
-                        <span className="text-gray-500 ml-2">{r.phone}</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className={`text-xs ${overdue ? "text-red-700 font-medium" : "text-gray-600"}`}>
-                          {due ? due.toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}
-                          {overdue && " (overdue)"}
-                        </span>
-                        {r.phone && (
-                          <a href={`tel:${r.phone}`} onClick={(e) => e.stopPropagation()} className="text-xs bg-blue-600 text-white px-2 py-1 rounded">📞</a>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <div className="flex items-center gap-4">
+              <button onClick={() => setShowReminders((v) => !v)} className="relative text-slate-300 hover:text-white">
+                <Icon d={ic.bell} size={16} />
+                {reminders.length > 0 && (
+                  <span className={`absolute -top-2 -right-2 text-[9px] text-white rounded-full px-1 py-0.5 min-w-[15px] text-center ${overdueCount > 0 ? "bg-red-600" : "bg-amber-500"}`}>{reminders.length}</span>
+                )}
+              </button>
+              <button onClick={logout} className="text-slate-300 hover:text-white"><Icon d={ic.logout} size={16} /></button>
+            </div>
           </div>
-        )}
+          <nav className="px-2 flex gap-1 overflow-x-auto border-t border-white/10">
+            {nav.map((n) => (
+              <button key={n.path} onClick={() => router.push(n.path)}
+                className={`px-3 py-2 text-[13px] font-medium whitespace-nowrap border-b-2 ${n.path === "/leads" ? "border-blue-400 text-white" : "border-transparent text-slate-400"}`}>{n.label}</button>
+            ))}
+          </nav>
+        </header>
 
-        {/* Source Tabs (filtered by enabled_sources) */}
-        <div className="flex flex-wrap gap-2 mb-4">
-          {visibleTabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setSourceFilter(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition ${tabClasses(tab.id)}`}
-            >
-              <span>{tab.emoji}</span>
-              <span>{tab.label}</span>
-              <span className={`inline-flex items-center justify-center min-w-[24px] px-1.5 py-0.5 rounded-full text-xs font-semibold ${sourceFilter === tab.id ? "bg-white/20 text-white" : "bg-gray-100 text-gray-600"}`}>
-                {getTabCount(tab.id)}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        {/* Filter bar — calendar date range + search + status + actions */}
-        <div className="bg-white border rounded-lg p-3 mb-4 flex flex-wrap gap-2 items-center">
-          <span className="text-xs text-gray-400 font-medium">Period:</span>
-          <DateRangePicker range={range} onChange={(r) => setRange(r)} />
-          <div className="h-6 w-px bg-gray-200 mx-1 hidden sm:block" />
-          <Input placeholder="Search name, phone, email..." value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
-          <select className="border rounded-md px-3 py-2 text-sm bg-white" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="">All statuses</option>
-            <option value="new">New</option>
-            <option value="contacted">Contacted</option>
-            <option value="qualified">Qualified</option>
-            <option value="won">Won</option>
-            <option value="lost">Lost</option>
-          </select>
-          <div className="ml-auto flex gap-2">
-            <Button variant="outline" onClick={exportCsv}>Export CSV</Button>
-            <Button onClick={() => setShowForm(!showForm)}>+ Add Lead</Button>
+        {/* Page top bar */}
+        <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex flex-wrap items-center gap-3 sticky top-0 z-20">
+          <h1 className="text-[15px] font-semibold text-slate-800 mr-1">Leads</h1>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {visibleTabs.map((tab) => {
+              const isActive = sourceFilter === tab.id;
+              return (
+                <button key={tab.id} onClick={() => setSourceFilter(tab.id)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[12px] font-medium border transition ${isActive ? "bg-slate-800 text-white border-slate-800" : "bg-white text-slate-600 border-slate-300 hover:border-slate-400"}`}>
+                  {tab.dot && <span className="w-1.5 h-1.5 rounded-full" style={{ background: isActive ? "#fff" : tab.dot }} />}
+                  <span>{tab.label}</span>
+                  <span className={`tabular-nums ${isActive ? "text-white/70" : "text-slate-400"}`}>{getTabCount(tab.id)}</span>
+                </button>
+              );
+            })}
           </div>
-        </div>
-
-        <p className="text-gray-500 text-sm mb-3">
-          Showing {displayLeads.length} of {total} leads
-          {sourceFilter ? <span className="ml-2 text-gray-700 font-medium">· {SOURCE_TABS.find((t) => t.id === sourceFilter)?.label}</span> : null}
-          <span className="ml-2 text-gray-700 font-medium">· {range.label}</span>
-          {duplicateIds.size > 0 && <span className="ml-2 text-amber-700">· ⚠️ {duplicateIds.size} possible duplicate{duplicateIds.size > 1 ? "s" : ""}</span>}
-        </p>
-
-        {showForm && (
-          <div className="bg-white border rounded-lg p-4 mb-4 grid grid-cols-2 gap-3">
-            <Input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            <Input placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-            <Input placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-            <Input placeholder="Notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-            <Button onClick={createLead}>Save Lead</Button>
-            <Button variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
-          </div>
-        )}
-
-        <div className="bg-white rounded-lg border overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Date</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Phone</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">City</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Quantity</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Source</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayLeads.length === 0 && (
-                <tr><td colSpan={9} className="text-center py-12 text-gray-400">
-                  {!isAllTime ? "Is duration mein koi lead nahi" : (sourceFilter === "meta_ads" ? "No Meta Ads leads yet" : "No leads match these filters")}
-                </td></tr>
+          <div className="ml-auto hidden lg:block">
+            <button onClick={() => setShowReminders((v) => !v)} className="relative text-slate-500 hover:text-slate-800 p-1" title="Follow-up reminders">
+              <Icon d={ic.bell} size={17} />
+              {reminders.length > 0 && (
+                <span className={`absolute -top-1 -right-1 text-[9px] text-white rounded-full px-1 py-0.5 min-w-[15px] text-center ${overdueCount > 0 ? "bg-red-600" : "bg-amber-500"}`}>{reminders.length}</span>
               )}
-              {displayLeads.map((lead) => {
-                const parsed = parseNotes(lead.notes);
-                const quantity = parsed.quantity || parsed.message || parsed.requirement || "";
-                const isExpanded = expandedRow === lead.id;
-                const isDuplicate = duplicateIds.has(lead.id);
-                const grpLabel = dayLabel(lead.created_at);
-                const showGroup = grpLabel !== lastDayLabel;
-                lastDayLabel = grpLabel;
-                return (
-                  <Fragment key={lead.id}>
-                    {showGroup && (
-                      <tr className="bg-gray-100/70">
-                        <td colSpan={9} className="px-4 py-2 text-xs font-semibold text-gray-600">{grpLabel}</td>
-                      </tr>
-                    )}
-                    <tr
-                      className={`border-b hover:bg-gray-50 cursor-pointer ${isExpanded ? "bg-blue-50/40" : ""} ${isDuplicate ? "bg-amber-50/30" : ""}`}
-                      onClick={() => openRow(lead)}
-                    >
-                      <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
-                        {new Date(lead.created_at).toLocaleDateString()}
-                        <div className="text-[10px] text-gray-400">{new Date(lead.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
-                      </td>
-                      <td className="px-4 py-3 font-medium">
-                        {lead.name || "-"}
-                        {lead.gclid && <span className="ml-2 inline-block bg-emerald-50 text-emerald-700 text-[10px] px-1.5 py-0.5 rounded">gclid</span>}
-                        {lead.fbclid && <span className="ml-2 inline-block bg-blue-50 text-blue-700 text-[10px] px-1.5 py-0.5 rounded">fbclid</span>}
-                        {followUpBadge(lead)}
-                        {isDuplicate && <span className="ml-2 inline-block bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 rounded">duplicate</span>}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {lead.phone ? <a href={`tel:${lead.phone}`} onClick={(e) => e.stopPropagation()} className="text-blue-600 hover:underline">{lead.phone}</a> : "-"}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-700 max-w-[180px] truncate" title={lead.email || ""}>{lead.email || "-"}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{parsed.city || "-"}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-xs">{quantity ? <span className="bg-amber-50 text-amber-800 px-2 py-0.5 rounded font-medium">{quantity}</span> : "-"}</td>
-                      <td className="px-4 py-3 capitalize text-xs whitespace-nowrap">{lead.source.replace("_", " ")}</td>
-                      <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusColors[lead.status] || "bg-gray-100 text-gray-700"}`}>{lead.status}</span></td>
-                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                        <select className="text-xs border rounded px-2 py-1" value={lead.status} onChange={(e) => updateStatus(lead.id, e.target.value)}>
-                          <option value="new">New</option>
-                          <option value="contacted">Contacted</option>
-                          <option value="qualified">Qualified</option>
-                          <option value="won">Won</option>
-                          <option value="lost">Lost</option>
-                        </select>
-                      </td>
-                    </tr>
+            </button>
+          </div>
+        </div>
 
-                    {isExpanded && (
-                      <tr className="bg-blue-50/30 border-b">
-                        <td colSpan={9} className="px-6 py-4">
-                          {/* Top: details + contact buttons */}
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs mb-4">
-                            <div><div className="text-gray-500 mb-0.5">Submitted</div><div className="font-medium">{new Date(lead.created_at).toLocaleString()}</div></div>
-                            <div><div className="text-gray-500 mb-0.5">Form</div><div className="font-medium">{parsed.form || "-"}</div></div>
-                            <div><div className="text-gray-500 mb-0.5">UTM Source</div><div className="font-medium">{lead.utm_source || "-"}</div></div>
-                            <div><div className="text-gray-500 mb-0.5">UTM Campaign</div><div className="font-medium">{lead.utm_campaign || "-"}</div></div>
-                            <div className="md:col-span-4"><div className="text-gray-500 mb-0.5">Notes (raw)</div><div className="font-medium whitespace-pre-line bg-white border rounded p-2">{lead.notes || "-"}</div></div>
-                          </div>
+        <div className="px-4 sm:px-6 py-5 max-w-[1600px] w-full mx-auto flex-1">
+          {/* Reminders banner */}
+          {(overdueCount > 0 || todayCount > 0) && (
+            <div
+              className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-2.5 cursor-pointer flex items-center gap-2"
+              onClick={() => setShowReminders((v) => !v)}
+            >
+              <Icon d={ic.clock} size={14} className="text-amber-700" />
+              <span className="text-[13px] text-amber-900 font-medium">
+                {overdueCount > 0 && <span className="text-red-700">{overdueCount} overdue</span>}
+                {overdueCount > 0 && todayCount > 0 && " · "}
+                {todayCount > 0 && <span>{todayCount} due today</span>}
+                {" "}— click to view follow-ups
+              </span>
+            </div>
+          )}
 
-                          <div className="flex gap-2 flex-wrap items-center mb-4">
-                            {lead.phone && <a href={`tel:${lead.phone}`} onClick={(e) => e.stopPropagation()} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700">📞 Call</a>}
-                            {lead.phone && <a href={waLink(lead.phone)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700">💬 WhatsApp</a>}
-                            {lead.email && <a href={`mailto:${lead.email}`} onClick={(e) => e.stopPropagation()} className="text-xs bg-gray-600 text-white px-3 py-1.5 rounded hover:bg-gray-700">✉️ Email</a>}
-                            <div className="ml-auto">
-                              <button onClick={(e) => { e.stopPropagation(); deleteLead(lead.id, lead.name); }} disabled={deletingId === lead.id} className="text-xs bg-red-600 text-white px-3 py-1.5 rounded hover:bg-red-700 disabled:opacity-50">
-                                {deletingId === lead.id ? "Deleting..." : "🗑️ Delete"}
-                              </button>
-                            </div>
-                          </div>
+          {/* Reminders panel */}
+          {showReminders && (
+            <div className="mb-3 rounded-md border border-slate-200 bg-white p-4">
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="font-semibold text-[13px] text-slate-800">Pending Follow-ups ({reminders.length})</h3>
+                <button onClick={() => setShowReminders(false)} className="text-xs text-slate-500 hover:underline">Close</button>
+              </div>
+              {reminders.length === 0 ? (
+                <p className="text-[13px] text-slate-400 py-2">No follow-ups scheduled. Set one from any lead's detail view.</p>
+              ) : (
+                <div className="space-y-1 max-h-72 overflow-y-auto">
+                  {reminders.map((r) => {
+                    const due = r.follow_up_at ? new Date(r.follow_up_at) : null;
+                    const overdue = isReminderOverdue(r);
+                    return (
+                      <div
+                        key={r.id}
+                        className={`flex items-center justify-between text-[13px] px-3 py-2 rounded ${overdue ? "bg-red-50" : "bg-slate-50"}`}
+                      >
+                        <div>
+                          <span className="font-medium">{r.name || "Unknown"}</span>
+                          <span className="text-slate-500 ml-2">{r.phone}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className={`text-xs ${overdue ? "text-red-700 font-medium" : "text-slate-600"}`}>
+                            {due ? due.toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}
+                            {overdue && " (overdue)"}
+                          </span>
+                          {r.phone && (
+                            <a href={`tel:${r.phone}`} onClick={(e) => e.stopPropagation()} className="text-white bg-slate-700 hover:bg-slate-600 p-1.5 rounded transition"><Icon d={ic.phone} size={11} /></a>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
-                          {/* Follow-up reminder */}
-                          <div className="bg-white border rounded p-3 mb-4" onClick={(e) => e.stopPropagation()}>
-                            <div className="text-xs font-semibold text-gray-700 mb-2">⏰ Follow-up Reminder</div>
-                            <div className="flex flex-wrap gap-2 items-center">
-                              <input
-                                type="datetime-local"
-                                value={followUpInput}
-                                onChange={(e) => setFollowUpInput(e.target.value)}
-                                className="border rounded px-2 py-1.5 text-xs"
-                              />
-                              <button onClick={() => saveFollowUp(lead.id)} className="text-xs bg-gray-900 text-white px-3 py-1.5 rounded hover:bg-gray-800">Set reminder</button>
-                              {lead.follow_up_at && (
-                                <button onClick={() => { setFollowUpInput(""); saveFollowUp(lead.id); }} className="text-xs text-red-600 hover:underline">Clear</button>
-                              )}
-                              {lead.follow_up_at && (
-                                <span className="text-xs text-gray-500">Current: {new Date(lead.follow_up_at).toLocaleString()}</span>
-                              )}
-                            </div>
-                          </div>
+          {/* Filter bar — calendar date range + search + status + actions */}
+          <div className="bg-white border border-slate-200 rounded-md p-2.5 mb-3 flex flex-wrap gap-2 items-center">
+            <DateRangePicker range={range} onChange={(r) => setRange(r)} />
+            <div className="h-5 w-px bg-slate-200 hidden sm:block" />
+            <Input placeholder="Search name, phone, email..." value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs h-8 text-[13px]" />
+            <select className="border border-slate-300 rounded px-2.5 py-1.5 text-[13px] bg-white text-slate-700" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="">All statuses</option>
+              <option value="new">New</option>
+              <option value="contacted">Contacted</option>
+              <option value="qualified">Qualified</option>
+              <option value="won">Won</option>
+              <option value="lost">Lost</option>
+            </select>
+            <div className="ml-auto flex gap-2">
+              <Button variant="outline" onClick={exportCsv} className="h-8 text-[13px]">Export CSV</Button>
+              <Button onClick={() => setShowForm(!showForm)} className="h-8 text-[13px]">+ Add Lead</Button>
+            </div>
+          </div>
 
-                          {/* Notes / Activity log */}
-                          <div className="bg-white border rounded p-3" onClick={(e) => e.stopPropagation()}>
-                            <div className="text-xs font-semibold text-gray-700 mb-2">📝 Notes & Activity</div>
-                            <div className="flex gap-2 mb-3">
-                              <input
-                                type="text"
-                                placeholder="What was discussed? e.g. Called, interested in 500 pcs..."
-                                value={newNote}
-                                onChange={(e) => setNewNote(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === "Enter") addNote(lead.id); }}
-                                className="flex-1 border rounded px-2 py-1.5 text-xs"
-                              />
-                              <button onClick={() => addNote(lead.id)} disabled={savingNote || !newNote.trim()} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 disabled:opacity-50">
-                                {savingNote ? "..." : "Add"}
-                              </button>
-                            </div>
-                            {activities.length === 0 ? (
-                              <p className="text-xs text-gray-400">No notes yet. Add what was discussed with this lead.</p>
-                            ) : (
-                              <div className="space-y-2 max-h-48 overflow-y-auto">
-                                {activities.map((a) => (
-                                  <div key={a.id} className="text-xs border-l-2 border-blue-200 pl-2">
-                                    <div className="text-gray-700">{a.note}</div>
-                                    <div className="text-[10px] text-gray-400">{a.created_at ? new Date(a.created_at).toLocaleString() : ""}</div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+          <p className="text-slate-500 text-[12px] mb-2">
+            Showing {displayLeads.length} of {total} leads
+            {sourceFilter ? <span className="ml-2 text-slate-700 font-medium">· {SOURCE_TABS.find((t) => t.id === sourceFilter)?.label}</span> : null}
+            <span className="ml-2 text-slate-700 font-medium">· {range.label}</span>
+            {duplicateIds.size > 0 && <span className="ml-2 text-amber-700">· {duplicateIds.size} possible duplicate{duplicateIds.size > 1 ? "s" : ""}</span>}
+          </p>
+
+          {showForm && (
+            <div className="bg-white border border-slate-200 rounded-md p-4 mb-3 grid grid-cols-2 gap-3">
+              <Input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <Input placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              <Input placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              <Input placeholder="Notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+              <Button onClick={createLead}>Save Lead</Button>
+              <Button variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
+            </div>
+          )}
+
+          <div className="bg-white rounded-md border border-slate-200 overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr className="text-[11px] uppercase tracking-wide">
+                  <th className="text-left px-4 py-2.5 font-medium text-slate-500 whitespace-nowrap">Date</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-slate-500">Name</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-slate-500">Phone</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-slate-500">Email</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-slate-500">City</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-slate-500">Quantity</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-slate-500">Source</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-slate-500">Status</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-slate-500">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayLeads.length === 0 && (
+                  <tr><td colSpan={9} className="text-center py-12 text-slate-400">
+                    {!isAllTime ? "No leads in this period" : (sourceFilter === "meta_ads" ? "No Meta Ads leads yet" : "No leads match these filters")}
+                  </td></tr>
+                )}
+                {displayLeads.map((lead) => {
+                  const parsed = parseNotes(lead.notes);
+                  const quantity = parsed.quantity || parsed.message || parsed.requirement || "";
+                  const isExpanded = expandedRow === lead.id;
+                  const isDuplicate = duplicateIds.has(lead.id);
+                  const grpLabel = dayLabel(lead.created_at);
+                  const showGroup = grpLabel !== lastDayLabel;
+                  lastDayLabel = grpLabel;
+                  return (
+                    <Fragment key={lead.id}>
+                      {showGroup && (
+                        <tr className="bg-slate-50/80">
+                          <td colSpan={9} className="px-4 py-1.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">{grpLabel}</td>
+                        </tr>
+                      )}
+                      <tr
+                        className={`border-b border-slate-100 hover:bg-slate-50/70 cursor-pointer ${isExpanded ? "bg-blue-50/40" : ""} ${isDuplicate ? "bg-amber-50/40" : ""}`}
+                        onClick={() => openRow(lead)}
+                      >
+                        <td className="px-4 py-2 text-xs text-slate-500 whitespace-nowrap">
+                          {new Date(lead.created_at).toLocaleDateString()}
+                          <div className="text-[10px] text-slate-400">{new Date(lead.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                        </td>
+                        <td className="px-4 py-2 font-medium text-slate-800">
+                          {lead.name || "-"}
+                          {lead.gclid && <span className="ml-2 inline-block bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-1.5 py-0.5 rounded">gclid</span>}
+                          {lead.fbclid && <span className="ml-2 inline-block bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-1.5 py-0.5 rounded">fbclid</span>}
+                          {followUpBadge(lead)}
+                          {isDuplicate && <span className="ml-2 inline-block bg-amber-50 text-amber-800 border border-amber-200 text-[10px] px-1.5 py-0.5 rounded">duplicate</span>}
+                        </td>
+                        <td className="px-4 py-2 whitespace-nowrap">
+                          {lead.phone ? <a href={`tel:${lead.phone}`} onClick={(e) => e.stopPropagation()} className="text-blue-700 hover:underline">{lead.phone}</a> : "-"}
+                        </td>
+                        <td className="px-4 py-2 text-xs text-slate-600 max-w-[180px] truncate" title={lead.email || ""}>{lead.email || "-"}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-slate-700">{parsed.city || "-"}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-xs">{quantity ? <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-medium">{quantity}</span> : "-"}</td>
+                        <td className="px-4 py-2 capitalize text-xs whitespace-nowrap text-slate-600">{lead.source.replace("_", " ")}</td>
+                        <td className="px-4 py-2"><span className={`px-2 py-0.5 rounded text-[11px] font-medium whitespace-nowrap capitalize ${statusColors[lead.status] || "bg-slate-100 text-slate-700"}`}>{lead.status}</span></td>
+                        <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                          <select className="text-xs border border-slate-300 rounded px-2 py-1 bg-white" value={lead.status} onChange={(e) => updateStatus(lead.id, e.target.value)}>
+                            <option value="new">New</option>
+                            <option value="contacted">Contacted</option>
+                            <option value="qualified">Qualified</option>
+                            <option value="won">Won</option>
+                            <option value="lost">Lost</option>
+                          </select>
                         </td>
                       </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+
+                      {isExpanded && (
+                        <tr className="bg-slate-50/60 border-b border-slate-100">
+                          <td colSpan={9} className="px-6 py-4">
+                            {/* Top: details + contact buttons */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs mb-4">
+                              <div><div className="text-slate-500 mb-0.5">Submitted</div><div className="font-medium text-slate-800">{new Date(lead.created_at).toLocaleString()}</div></div>
+                              <div><div className="text-slate-500 mb-0.5">Form</div><div className="font-medium text-slate-800">{parsed.form || "-"}</div></div>
+                              <div><div className="text-slate-500 mb-0.5">UTM Source</div><div className="font-medium text-slate-800">{lead.utm_source || "-"}</div></div>
+                              <div><div className="text-slate-500 mb-0.5">UTM Campaign</div><div className="font-medium text-slate-800">{lead.utm_campaign || "-"}</div></div>
+                              <div className="md:col-span-4"><div className="text-slate-500 mb-0.5">Notes (raw)</div><div className="font-medium whitespace-pre-line bg-white border border-slate-200 rounded p-2 text-slate-800">{lead.notes || "-"}</div></div>
+                            </div>
+
+                            <div className="flex gap-2 flex-wrap items-center mb-4">
+                              {lead.phone && <a href={`tel:${lead.phone}`} onClick={(e) => e.stopPropagation()} className="flex items-center gap-1.5 text-xs bg-slate-800 text-white px-3 py-1.5 rounded hover:bg-slate-700 transition"><Icon d={ic.phone} size={12} />Call</a>}
+                              {lead.phone && <a href={waLink(lead.phone)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-1.5 text-xs bg-emerald-700 text-white px-3 py-1.5 rounded hover:bg-emerald-600 transition"><Icon d={ic.chat} size={12} />WhatsApp</a>}
+                              {lead.email && <a href={`mailto:${lead.email}`} onClick={(e) => e.stopPropagation()} className="flex items-center gap-1.5 text-xs bg-slate-600 text-white px-3 py-1.5 rounded hover:bg-slate-500 transition"><Icon d={ic.mail} size={12} />Email</a>}
+                              <div className="ml-auto">
+                                <button onClick={(e) => { e.stopPropagation(); deleteLead(lead.id, lead.name); }} disabled={deletingId === lead.id} className="flex items-center gap-1.5 text-xs bg-white border border-red-300 text-red-700 px-3 py-1.5 rounded hover:bg-red-50 disabled:opacity-50 transition">
+                                  <Icon d={ic.trash} size={12} />{deletingId === lead.id ? "Deleting..." : "Delete"}
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Follow-up reminder */}
+                            <div className="bg-white border border-slate-200 rounded p-3 mb-4" onClick={(e) => e.stopPropagation()}>
+                              <div className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1.5"><Icon d={ic.clock} size={12} className="text-slate-400" />Follow-up Reminder</div>
+                              <div className="flex flex-wrap gap-2 items-center">
+                                <input
+                                  type="datetime-local"
+                                  value={followUpInput}
+                                  onChange={(e) => setFollowUpInput(e.target.value)}
+                                  className="border border-slate-300 rounded px-2 py-1.5 text-xs"
+                                />
+                                <button onClick={() => saveFollowUp(lead.id)} className="text-xs bg-slate-800 text-white px-3 py-1.5 rounded hover:bg-slate-700 transition">Set reminder</button>
+                                {lead.follow_up_at && (
+                                  <button onClick={() => { setFollowUpInput(""); saveFollowUp(lead.id); }} className="text-xs text-red-600 hover:underline">Clear</button>
+                                )}
+                                {lead.follow_up_at && (
+                                  <span className="text-xs text-slate-500">Current: {new Date(lead.follow_up_at).toLocaleString()}</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Notes / Activity log */}
+                            <div className="bg-white border border-slate-200 rounded p-3" onClick={(e) => e.stopPropagation()}>
+                              <div className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1.5"><Icon d={ic.note} size={12} className="text-slate-400" />Notes & Activity</div>
+                              <div className="flex gap-2 mb-3">
+                                <input
+                                  type="text"
+                                  placeholder="What was discussed? e.g. Called, interested in 500 pcs..."
+                                  value={newNote}
+                                  onChange={(e) => setNewNote(e.target.value)}
+                                  onKeyDown={(e) => { if (e.key === "Enter") addNote(lead.id); }}
+                                  className="flex-1 border border-slate-300 rounded px-2 py-1.5 text-xs"
+                                />
+                                <button onClick={() => addNote(lead.id)} disabled={savingNote || !newNote.trim()} className="text-xs bg-slate-800 text-white px-3 py-1.5 rounded hover:bg-slate-700 disabled:opacity-50 transition">
+                                  {savingNote ? "..." : "Add"}
+                                </button>
+                              </div>
+                              {activities.length === 0 ? (
+                                <p className="text-xs text-slate-400">No notes yet. Add what was discussed with this lead.</p>
+                              ) : (
+                                <div className="space-y-2 max-h-48 overflow-y-auto">
+                                  {activities.map((a) => (
+                                    <div key={a.id} className="text-xs border-l-2 border-slate-300 pl-2">
+                                      <div className="text-slate-700">{a.note}</div>
+                                      <div className="text-[10px] text-slate-400">{a.created_at ? new Date(a.created_at).toLocaleString() : ""}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="text-center text-[11px] text-slate-400 py-5">Powered by <span className="font-medium text-slate-500">Brandbanalo</span></div>
         </div>
-        <div className="text-center text-xs text-gray-400 py-6">Powered by <span className="font-medium text-gray-500">Brandbanalo</span></div>
       </div>
     </div>
   );
