@@ -9,6 +9,10 @@ interface Lead {
 }
 interface RangeSel { start: Date; end: Date; label: string; }
 interface Spend { id: string; month: string; source: string; amount: number; }
+interface Reminder {
+  id: string; name: string | null; phone: string | null;
+  follow_up_at: string | null; status: string; overdue: boolean;
+}
 
 function parseNotes(notes: string | null): Record<string, string> {
   const result: Record<string, string> = {};
@@ -54,6 +58,9 @@ const ic = {
   calendar:  <><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>,
   sliders:   <><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3" /><path d="M1 14h6M9 8h6M17 16h6" /></>,
   rupee:     <path d="M6 3h12M6 8h12M6 13l8.5 8M6 13h3c4 0 6-2 6-5" />,
+  clock:     <><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></>,
+  phone:     <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />,
+  chat:      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
 };
 function Icon({ d, size = 15, className = "" }: { d: React.ReactNode; size?: number; className?: string }) {
   return (
@@ -102,6 +109,68 @@ function smoothPath(pts: { x: number; y: number }[]) {
     d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
   }
   return d;
+}
+
+/* ---------- Follow-up reminder popup (shows once per session on login) ---------- */
+function ReminderPopup({ reminders, onClose }: { reminders: Reminder[]; onClose: () => void }) {
+  const now = new Date();
+  const isOverdue = (r: Reminder) => !!(r.follow_up_at && new Date(r.follow_up_at) < now);
+  const sorted = [...reminders].sort((a, b) => {
+    const ao = isOverdue(a) ? 0 : 1, bo = isOverdue(b) ? 0 : 1;
+    if (ao !== bo) return ao - bo;
+    const at = a.follow_up_at ? new Date(a.follow_up_at).getTime() : 0;
+    const bt = b.follow_up_at ? new Date(b.follow_up_at).getTime() : 0;
+    return at - bt;
+  });
+  const overdueCount = reminders.filter(isOverdue).length;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/45" onClick={onClose} />
+      <div className="relative bg-white rounded-lg shadow-2xl w-full max-w-lg max-h-[85vh] overflow-hidden border border-slate-200 flex flex-col">
+        <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Icon d={ic.clock} size={16} className="text-slate-500" />
+            <h2 className="text-[14px] font-semibold text-slate-800">Pending Follow-ups ({reminders.length})</h2>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-sm">✕</button>
+        </div>
+
+        {overdueCount > 0 && (
+          <div className="px-5 py-2 bg-red-50 border-b border-red-100">
+            <span className="text-[12px] text-red-700 font-medium">{overdueCount} overdue — inhe pehle call karo</span>
+          </div>
+        )}
+
+        <div className="p-4 space-y-1.5 overflow-y-auto">
+          {sorted.map((r) => {
+            const due = r.follow_up_at ? new Date(r.follow_up_at) : null;
+            const overdue = isOverdue(r);
+            return (
+              <div key={r.id} className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded ${overdue ? "bg-red-50" : "bg-slate-50"}`}>
+                <div className="min-w-0">
+                  <span className="font-medium text-slate-800 text-[13px]">{r.name || "Unknown"}</span>
+                  {r.phone && <span className="text-slate-500 ml-2 text-[13px]">{r.phone}</span>}
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className={`text-[12px] ${overdue ? "text-red-700 font-medium" : "text-slate-600"}`}>
+                    {due ? due.toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}
+                    {overdue && " (overdue)"}
+                  </span>
+                  {r.phone && (
+                    <a href={`tel:${r.phone}`} className="text-white bg-slate-700 hover:bg-slate-600 p-1.5 rounded transition"><Icon d={ic.phone} size={12} /></a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="px-5 py-3 border-t border-slate-200 flex justify-end">
+          <button onClick={onClose} className="text-[13px] bg-slate-800 text-white rounded px-4 py-2 hover:bg-slate-700 transition">Got it</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function DateRangePicker({ range, onChange }: { range: RangeSel; onChange: (r: RangeSel) => void }) {
@@ -261,6 +330,8 @@ export default function DashboardPage() {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [hoverSrc, setHoverSrc] = useState<string | null>(null);
   const [roasOpen, setRoasOpen] = useState(false);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [showReminderPopup, setShowReminderPopup] = useState(false);
   const [brand, setBrand] = useState<{ name: string; logo: string; color: string }>({ name: "", logo: "", color: "#111827" });
   const [range, setRange] = useState<RangeSel>(() => {
     const n = new Date();
@@ -278,12 +349,24 @@ export default function DashboardPage() {
       });
     }).catch(() => {});
   }
+  function loadReminders() {
+    return api.get("/leads/reminders/list").then((r) => {
+      const items: Reminder[] = r.data.items || [];
+      setReminders(items);
+      // Popup sirf ek baar per session (login ke baad). Refresh/navigate pe dubara nahi.
+      if (items.length > 0 && !sessionStorage.getItem("reminderPopupShown")) {
+        setShowReminderPopup(true);
+        sessionStorage.setItem("reminderPopupShown", "1");
+      }
+    }).catch(() => {});
+  }
 
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) { router.push("/login"); return; }
     if (localStorage.getItem("role") === "super_admin") { router.push("/agency"); return; }
     loadTenant();
+    loadReminders();
     Promise.all([loadLeads(), loadSpends()]).catch(() => router.push("/login")).finally(() => { setLoading(false); setTimeout(() => setReady(true), 60); });
   }, []);
 
@@ -397,6 +480,11 @@ export default function DashboardPage() {
 
   return (
     <AppShell brand={brand} active="/dashboard" onLogout={logout} router={router}>
+      {/* Login follow-up reminder popup */}
+      {showReminderPopup && reminders.length > 0 && (
+        <ReminderPopup reminders={reminders} onClose={() => setShowReminderPopup(false)} />
+      )}
+
       {/* Page top bar */}
       <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex flex-wrap items-center gap-3 sticky top-0 lg:top-0 z-20">
         <h1 className="text-[15px] font-semibold text-slate-800 mr-2">Dashboard</h1>
