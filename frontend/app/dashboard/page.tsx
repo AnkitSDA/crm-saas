@@ -476,7 +476,7 @@ export default function DashboardPage() {
   }
 
   const wonLeadsInPeriod = filtered.filter((l) => l.status === "won");
-  const logout = () => { localStorage.clear(); router.push("/login"); };
+  const logout = () => { sessionStorage.removeItem("reminderPopupShown"); localStorage.clear(); router.push("/login"); };
 
   return (
     <AppShell brand={brand} active="/dashboard" onLogout={logout} router={router}>

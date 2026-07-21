@@ -518,7 +518,7 @@ export default function LeadsPage() {
   const isAllTime = range.label === "All time";
   let lastDayLabel: string | null = null;
 
-  const logout = () => { localStorage.clear(); router.push("/login"); };
+  const logout = () => { sessionStorage.removeItem("reminderPopupShown"); localStorage.clear(); router.push("/login"); };
   const nav = [
     { label: "Dashboard", path: "/dashboard", icon: ic.dashboard },
     { label: "Leads", path: "/leads", icon: ic.leads },
