@@ -51,3 +51,10 @@ def require_super_admin(user: User = Depends(get_current_user)) -> User:
     if user.role != "super_admin":
         raise HTTPException(status_code=403, detail="Super admin only")
     return user
+
+# Client-side admin only (tenant_admin or super_admin). Blocks "member" (staff).
+# Use this to guard delete / export / ROAS / team-management endpoints.
+def require_tenant_admin(user: User = Depends(get_current_user)) -> User:
+    if user.role not in ("tenant_admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Only the account admin can do this")
+    return user
