@@ -55,6 +55,7 @@ const ic = {
   trophy:    <><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2z" /></>,
   activity:  <path d="M22 12h-4l-3 9L9 3l-3 9H2" />,
   layers:    <><path d="M12 2 2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5M2 12l10 5 10-5" /></>,
+  team:      <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></>,
   alert:     <><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></>,
   pipeline:  <><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></>,
   calendar:  <><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>,
@@ -262,13 +263,14 @@ function DateRangePicker({ range, onChange }: { range: RangeSel; onChange: (r: R
 }
 
 /* ---------- App shell: dark sidebar (desktop) + top bar ---------- */
-function AppShell({ brand, active, onLogout, children, router }: {
+function AppShell({ brand, active, onLogout, children, router, isAdmin }: {
   brand: { name: string; logo: string; color: string }; active: string;
-  onLogout: () => void; children: React.ReactNode; router: any;
+  onLogout: () => void; children: React.ReactNode; router: any; isAdmin: boolean;
 }) {
   const nav = [
     { label: "Dashboard", path: "/dashboard", icon: ic.dashboard },
     { label: "Leads", path: "/leads", icon: ic.leads },
+    ...(isAdmin ? [{ label: "Team", path: "/team", icon: ic.team }] : []),
     { label: "Settings", path: "/settings", icon: ic.settings },
   ];
   return (
@@ -485,10 +487,11 @@ export default function DashboardPage() {
   }
 
   const wonLeadsInPeriod = filtered.filter((l) => l.status === "won");
+  const isAdmin = (typeof window !== "undefined" && localStorage.getItem("role") !== "member");
   const logout = () => { sessionStorage.removeItem("reminderPopupShown"); localStorage.clear(); router.push("/login"); };
 
   return (
-    <AppShell brand={brand} active="/dashboard" onLogout={logout} router={router}>
+    <AppShell brand={brand} active="/dashboard" onLogout={logout} router={router} isAdmin={isAdmin}>
       {/* Login follow-up reminder popup */}
       {showReminderPopup && reminders.length > 0 && (
         <ReminderPopup reminders={reminders} onClose={() => setShowReminderPopup(false)} />
@@ -509,9 +512,11 @@ export default function DashboardPage() {
             </button>
           ))}
         </div>
-        <button onClick={() => setRoasOpen(true)} className="ml-auto flex items-center gap-1.5 text-[12px] font-medium border border-slate-300 rounded px-3 py-1.5 bg-white text-slate-700 hover:border-slate-400 transition">
-          <Icon d={ic.sliders} size={13} />Manage ROAS
-        </button>
+        {isAdmin && (
+          <button onClick={() => setRoasOpen(true)} className="ml-auto flex items-center gap-1.5 text-[12px] font-medium border border-slate-300 rounded px-3 py-1.5 bg-white text-slate-700 hover:border-slate-400 transition">
+            <Icon d={ic.sliders} size={13} />Manage ROAS
+          </button>
+        )}
       </div>
 
       <div className="px-4 sm:px-6 py-5 max-w-[1600px] w-full mx-auto">

@@ -90,6 +90,7 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
 const ic = {
   dashboard: <path d="M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z" />,
   leads:     <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />,
+  team:      <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></>,
   settings:  <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></>,
   logout:    <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5M21 12H9" /></>,
   bell:      <><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></>,
@@ -518,10 +519,12 @@ export default function LeadsPage() {
   const isAllTime = range.label === "All time";
   let lastDayLabel: string | null = null;
 
+  const isAdmin = (typeof window !== "undefined" && localStorage.getItem("role") !== "member");
   const logout = () => { sessionStorage.removeItem("reminderPopupShown"); localStorage.clear(); router.push("/login"); };
   const nav = [
     { label: "Dashboard", path: "/dashboard", icon: ic.dashboard },
     { label: "Leads", path: "/leads", icon: ic.leads },
+    ...(isAdmin ? [{ label: "Team", path: "/team", icon: ic.team }] : []),
     { label: "Settings", path: "/settings", icon: ic.settings },
   ];
 
@@ -676,7 +679,7 @@ export default function LeadsPage() {
               <option value="lost">Lost</option>
             </select>
             <div className="ml-auto flex gap-2">
-              <Button variant="outline" onClick={exportCsv} className="h-8 text-[13px]">Export CSV</Button>
+              {isAdmin && <Button variant="outline" onClick={exportCsv} className="h-8 text-[13px]">Export CSV</Button>}
               <Button onClick={() => setShowForm(!showForm)} className="h-8 text-[13px]">+ Add Lead</Button>
             </div>
           </div>
@@ -785,11 +788,13 @@ export default function LeadsPage() {
                               {lead.phone && <a href={`tel:${lead.phone}`} onClick={(e) => e.stopPropagation()} className="flex items-center gap-1.5 text-xs bg-slate-800 text-white px-3 py-1.5 rounded hover:bg-slate-700 transition"><Icon d={ic.phone} size={12} />Call</a>}
                               {lead.phone && <a href={waLink(lead.phone)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-1.5 text-xs bg-emerald-700 text-white px-3 py-1.5 rounded hover:bg-emerald-600 transition"><Icon d={ic.chat} size={12} />WhatsApp</a>}
                               {lead.email && <a href={`mailto:${lead.email}`} onClick={(e) => e.stopPropagation()} className="flex items-center gap-1.5 text-xs bg-slate-600 text-white px-3 py-1.5 rounded hover:bg-slate-500 transition"><Icon d={ic.mail} size={12} />Email</a>}
-                              <div className="ml-auto">
-                                <button onClick={(e) => { e.stopPropagation(); deleteLead(lead.id, lead.name); }} disabled={deletingId === lead.id} className="flex items-center gap-1.5 text-xs bg-white border border-red-300 text-red-700 px-3 py-1.5 rounded hover:bg-red-50 disabled:opacity-50 transition">
-                                  <Icon d={ic.trash} size={12} />{deletingId === lead.id ? "Deleting..." : "Delete"}
-                                </button>
-                              </div>
+                              {isAdmin && (
+                                <div className="ml-auto">
+                                  <button onClick={(e) => { e.stopPropagation(); deleteLead(lead.id, lead.name); }} disabled={deletingId === lead.id} className="flex items-center gap-1.5 text-xs bg-white border border-red-300 text-red-700 px-3 py-1.5 rounded hover:bg-red-50 disabled:opacity-50 transition">
+                                    <Icon d={ic.trash} size={12} />{deletingId === lead.id ? "Deleting..." : "Delete"}
+                                  </button>
+                                </div>
+                              )}
                             </div>
 
                             {/* Follow-up reminder */}
@@ -835,7 +840,11 @@ export default function LeadsPage() {
                                   {activities.map((a) => (
                                     <div key={a.id} className="text-xs border-l-2 border-slate-300 pl-2">
                                       <div className="text-slate-700">{a.note}</div>
-                                      <div className="text-[10px] text-slate-400">{a.created_at ? new Date(a.created_at).toLocaleString() : ""}</div>
+                                      <div className="text-[10px] text-slate-400">
+                                        {a.created_by ? <span className="font-medium text-slate-500">{a.created_by}</span> : null}
+                                        {a.created_by && a.created_at ? " · " : ""}
+                                        {a.created_at ? new Date(a.created_at).toLocaleString() : ""}
+                                      </div>
                                     </div>
                                   ))}
                                 </div>
