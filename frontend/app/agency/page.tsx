@@ -407,115 +407,156 @@ export default function AgencyDashboard() {
                               </div>
 
                               {tab === "manage" && (
-                                <div className="grid md:grid-cols-3 gap-4">
-                                  {/* settings */}
-                                  <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
-                                    <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Settings</div>
-                                    <div>
-                                      <label className="text-[11px] text-slate-400">Monthly rate (₹)</label>
-                                      <input className={inputCls} type="number" value={eRate} onChange={(e) => setERate(e.target.value)} />
-                                    </div>
-                                    <div>
-                                      <label className="text-[11px] text-slate-400">Plan</label>
-                                      <input className={inputCls} value={ePlan} onChange={(e) => setEPlan(e.target.value)} placeholder="active / basic / pro" />
-                                    </div>
-                                    <div>
-                                      <label className="text-[11px] text-slate-400">Access mode</label>
-                                      <div className="grid grid-cols-2 gap-2 mt-1">
-                                        {[
-                                          {k:"active",label:"🟢 Active",d:"leads + login ON"},
-                                          {k:"block_all",label:"🔴 Block all",d:"leads + login OFF"},
-                                          {k:"block_leads",label:"📥 Block leads",d:"login ON, no new leads"},
-                                          {k:"block_login",label:"🔒 Block login",d:"leads ON, no access"},
-                                        ].map((m)=>(
-                                          <button key={m.k} onClick={()=>setEMode(m.k)} title={m.d}
-                                            className={"text-[11px] px-2 py-2 rounded-lg border text-left transition " +
-                                              (eMode===m.k ? "bg-indigo-50 border-indigo-300 text-indigo-700 font-medium" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300")}>
-                                            <div>{m.label}</div><div className="text-[10px] text-slate-400">{m.d}</div>
-                                          </button>
-                                        ))}
+                                <div className="space-y-4">
+                                  {/* Login + Integration side by side */}
+                                  <div className="grid md:grid-cols-2 gap-4 items-start">
+                                    {/* login */}
+                                    <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+                                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Login &amp; access</div>
+                                      <div className="bg-slate-50 rounded-lg border border-slate-200 px-3 py-2">
+                                        <div className="text-[11px] text-slate-400">Login email</div>
+                                        <div className="text-sm text-slate-700 truncate">{detail.login_email || "—"}</div>
                                       </div>
-                                    </div>
-                                    <div>
-                                      <label className="text-[11px] text-slate-400">Sources on/off</label>
-                                      <div className="flex gap-2 mt-1">
-                                        {SOURCES.map((s) => (
-                                          <button key={s.key} onClick={() => toggleSource(s.key)}
-                                            className={"text-[11px] px-3 py-1.5 rounded-lg border transition " +
-                                              (eSources.includes(s.key) ? "bg-indigo-50 border-indigo-300 text-indigo-700 font-medium" : "bg-white border-slate-200 text-slate-400 hover:border-slate-300")}>
-                                            {eSources.includes(s.key) ? "✓ " : ""}{s.label}</button>
-                                        ))}
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <button onClick={() => resetPw(c.id)}
+                                          className="border border-amber-300 text-amber-700 hover:bg-amber-50 text-[13px] font-medium px-4 py-2 rounded-lg transition">Reset Password</button>
+                                        <span className={"inline-flex items-center text-[11px] font-medium px-2.5 py-1 rounded-full " + (detail.paid_this_month ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-600 border border-rose-200")}>
+                                          {detail.paid_this_month ? "✓ paid this month" : "unpaid this month"}
+                                        </span>
+                                        <span className="inline-flex items-center text-[11px] font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                                          {detail.access_mode}
+                                        </span>
                                       </div>
+                                      {savedPw && (
+                                        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                                          <div className="text-[11px] text-amber-600">New password (save it!)</div>
+                                          <div className="flex gap-2 items-center">
+                                            <code className="text-sm text-amber-800 flex-1 break-all">{savedPw}</code>
+                                            <button onClick={() => copy(savedPw, "Password")} className="text-[11px] text-indigo-600 hover:underline shrink-0">Copy</button>
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
-                                    <div className="pt-2 mt-1 border-t border-slate-100">
-                                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2">Branding (white-label)</div>
-                                      <label className="text-[11px] text-slate-400">Display name</label>
-                                      <input className={inputCls} value={eBrand} onChange={(e) => setEBrand(e.target.value)} placeholder="Client brand name" />
-                                      <label className="text-[11px] text-slate-400 mt-2 block">Logo URL</label>
-                                      <input className={inputCls} value={eLogo} onChange={(e) => setELogo(e.target.value)} placeholder="https://...logo.png" />
-                                      <div className="flex items-center gap-2 mt-2">
-                                        <label className="text-[11px] text-slate-400">Accent</label>
-                                        <input type="color" value={eColor} onChange={(e) => setEColor(e.target.value)} className="h-8 w-12 border border-slate-300 rounded cursor-pointer" />
-                                        <input className="border border-slate-300 rounded-lg px-2 py-1 text-xs w-24" value={eColor} onChange={(e) => setEColor(e.target.value)} />
-                                        {eLogo ? <img src={eLogo} alt="" className="h-8 ml-auto rounded" onError={(ev:any)=>{ev.target.style.display='none';}} /> : null}
-                                      </div>
-                                    </div>
-                                    <button onClick={() => saveSettings(c.id)}
-                                      className="bg-indigo-600 hover:bg-indigo-500 text-white text-[13px] font-medium px-4 py-2 rounded-lg w-full transition">Save Settings</button>
-                                  </div>
 
-                                  {/* login + password */}
-                                  <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
-                                    <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Login</div>
-                                    <div className="bg-slate-50 rounded-lg border border-slate-200 px-3 py-2">
-                                      <div className="text-[11px] text-slate-400">Login email</div>
-                                      <div className="text-sm text-slate-700 truncate">{detail.login_email || "—"}</div>
-                                    </div>
-                                    <button onClick={() => resetPw(c.id)}
-                                      className="border border-amber-300 text-amber-700 hover:bg-amber-50 text-[13px] font-medium px-4 py-2 rounded-lg w-full transition">Reset Password</button>
-                                    {savedPw && (
-                                      <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                                        <div className="text-[11px] text-amber-600">New password (save it!)</div>
-                                        <div className="flex gap-2 items-center">
-                                          <code className="text-sm text-amber-800 flex-1 break-all">{savedPw}</code>
-                                          <button onClick={() => copy(savedPw, "Password")} className="text-[11px] text-indigo-600 hover:underline shrink-0">Copy</button>
+                                    {/* integration */}
+                                    <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+                                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Integration</div>
+                                      <div>
+                                        <div className="text-[11px] text-slate-400 mb-1">API key</div>
+                                        <div className="flex gap-2 items-center bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5">
+                                          <code className="text-[11px] truncate flex-1 text-slate-600">{detail.api_key}</code>
+                                          <button onClick={() => copy(detail.api_key, "API key")} className="text-slate-400 hover:text-indigo-600 shrink-0"><Icon d={ic.copy} size={13} /></button>
                                         </div>
                                       </div>
-                                    )}
-                                    <div className="pt-2 mt-2 border-t border-slate-100">
-                                      <div className="text-[11px] font-semibold text-red-400 uppercase tracking-wide mb-1">Danger zone</div>
-                                      <button onClick={() => deleteClient(c.id, c.name)}
-                                        className="border border-red-300 text-red-600 hover:bg-red-50 text-[13px] font-medium px-4 py-2 rounded-lg w-full transition">
-                                        Delete Client (permanent)</button>
+                                      <div>
+                                        <div className="text-[11px] text-slate-400 mb-1">Webhook URL</div>
+                                        <div className="flex gap-2 items-center bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5">
+                                          <code className="text-[11px] truncate flex-1 text-slate-600">{webhookUrl}</code>
+                                          <button onClick={() => copy(webhookUrl, "Webhook")} className="text-slate-400 hover:text-indigo-600 shrink-0"><Icon d={ic.copy} size={13} /></button>
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <div className="text-[11px] text-slate-400 mb-1.5">Sources breakdown</div>
+                                        {detail.sources.length === 0 ? (
+                                          <p className="text-[12px] text-slate-400">No leads yet.</p>
+                                        ) : (
+                                          <div className="grid grid-cols-3 gap-2">
+                                            {detail.sources.map((s: any) => (
+                                              <div key={s.source} className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2">
+                                                <div className="text-[10px] uppercase tracking-wide text-slate-400 capitalize truncate">{s.source.replace("_", " ")}</div>
+                                                <div className="text-[15px] font-semibold text-slate-800 tabular-nums leading-tight">{s.leads}</div>
+                                                <div className="text-[10px] text-emerald-700">{s.won} won</div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
 
-                                  {/* integration */}
-                                  <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
-                                    <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Integration</div>
-                                    <div>
-                                      <div className="text-[11px] text-slate-400 mb-1">API key</div>
-                                      <div className="flex gap-2 items-center bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
-                                        <code className="text-[11px] truncate flex-1 text-slate-600">{detail.api_key}</code>
-                                        <button onClick={() => copy(detail.api_key, "API key")} className="text-slate-400 hover:text-indigo-600 shrink-0"><Icon d={ic.copy} size={13} /></button>
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <div className="text-[11px] text-slate-400 mb-1">Webhook URL</div>
-                                      <div className="flex gap-2 items-center bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
-                                        <code className="text-[11px] truncate flex-1 text-slate-600">{webhookUrl}</code>
-                                        <button onClick={() => copy(webhookUrl, "Webhook")} className="text-slate-400 hover:text-indigo-600 shrink-0"><Icon d={ic.copy} size={13} /></button>
-                                      </div>
-                                    </div>
-                                    <div className="pt-1">
-                                      <div className="text-[11px] text-slate-400 mb-1">Sources breakdown</div>
-                                      {detail.sources.map((s: any) => (
-                                        <div key={s.source} className="flex justify-between text-[12px] py-1 border-b border-slate-50 last:border-0">
-                                          <span className="capitalize text-slate-600">{s.source.replace("_", " ")}</span>
-                                          <span className="text-slate-400 tabular-nums">{s.leads} leads · {s.won} won</span>
+                                  {/* Settings — full width */}
+                                  <div className="bg-white rounded-xl border border-slate-200">
+                                    <div className="px-4 py-2.5 border-b border-slate-100 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Settings</div>
+                                    <div className="p-4 space-y-4">
+                                      <div className="grid md:grid-cols-3 gap-4">
+                                        <div className="space-y-3">
+                                          <div>
+                                            <label className="text-[11px] text-slate-400">Monthly rate (₹)</label>
+                                            <input className={inputCls} type="number" value={eRate} onChange={(e) => setERate(e.target.value)} />
+                                          </div>
+                                          <div>
+                                            <label className="text-[11px] text-slate-400">Plan</label>
+                                            <input className={inputCls} value={ePlan} onChange={(e) => setEPlan(e.target.value)} placeholder="active / basic / pro" />
+                                          </div>
                                         </div>
-                                      ))}
+                                        <div>
+                                          <label className="text-[11px] text-slate-400">Access mode</label>
+                                          <div className="grid grid-cols-2 gap-2 mt-1">
+                                            {[
+                                              {k:"active",label:"🟢 Active",d:"leads + login ON"},
+                                              {k:"block_all",label:"🔴 Block all",d:"leads + login OFF"},
+                                              {k:"block_leads",label:"📥 Block leads",d:"login ON, no new leads"},
+                                              {k:"block_login",label:"🔒 Block login",d:"leads ON, no access"},
+                                            ].map((m)=>(
+                                              <button key={m.k} onClick={()=>setEMode(m.k)} title={m.d}
+                                                className={"text-[11px] px-2 py-2 rounded-lg border text-left transition " +
+                                                  (eMode===m.k ? "bg-indigo-50 border-indigo-300 text-indigo-700 font-medium" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300")}>
+                                                <div>{m.label}</div><div className="text-[10px] text-slate-400">{m.d}</div>
+                                              </button>
+                                            ))}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <label className="text-[11px] text-slate-400">Sources on/off</label>
+                                          <div className="flex flex-wrap gap-2 mt-1">
+                                            {SOURCES.map((s) => (
+                                              <button key={s.key} onClick={() => toggleSource(s.key)}
+                                                className={"text-[11px] px-3 py-1.5 rounded-lg border transition " +
+                                                  (eSources.includes(s.key) ? "bg-indigo-50 border-indigo-300 text-indigo-700 font-medium" : "bg-white border-slate-200 text-slate-400 hover:border-slate-300")}>
+                                                {eSources.includes(s.key) ? "✓ " : ""}{s.label}</button>
+                                            ))}
+                                          </div>
+                                          <p className="text-[10px] text-slate-400 mt-2">Jo source off hai, client ko uska tab nahi dikhega.</p>
+                                        </div>
+                                      </div>
+
+                                      <div className="pt-4 border-t border-slate-100">
+                                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2">Branding (white-label)</div>
+                                        <div className="grid md:grid-cols-3 gap-3">
+                                          <div>
+                                            <label className="text-[11px] text-slate-400">Display name</label>
+                                            <input className={inputCls} value={eBrand} onChange={(e) => setEBrand(e.target.value)} placeholder="Client brand name" />
+                                          </div>
+                                          <div>
+                                            <label className="text-[11px] text-slate-400">Logo URL</label>
+                                            <input className={inputCls} value={eLogo} onChange={(e) => setELogo(e.target.value)} placeholder="https://...logo.png" />
+                                          </div>
+                                          <div>
+                                            <label className="text-[11px] text-slate-400">Accent color</label>
+                                            <div className="flex items-center gap-2 mt-1">
+                                              <input type="color" value={eColor} onChange={(e) => setEColor(e.target.value)} className="h-9 w-12 border border-slate-300 rounded cursor-pointer shrink-0" />
+                                              <input className="border border-slate-300 rounded-lg px-2 py-2 text-xs w-24" value={eColor} onChange={(e) => setEColor(e.target.value)} />
+                                              {eLogo ? <img src={eLogo} alt="" className="h-9 ml-auto rounded" onError={(ev:any)=>{ev.target.style.display='none';}} /> : null}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
                                     </div>
+                                    <div className="px-4 py-3 border-t border-slate-100 flex justify-end">
+                                      <button onClick={() => saveSettings(c.id)}
+                                        className="bg-indigo-600 hover:bg-indigo-500 text-white text-[13px] font-medium px-5 py-2 rounded-lg transition">Save Settings</button>
+                                    </div>
+                                  </div>
+
+                                  {/* Danger zone — slim strip */}
+                                  <div className="bg-white rounded-xl border border-red-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                      <div className="text-[11px] font-semibold text-red-500 uppercase tracking-wide">Danger zone</div>
+                                      <p className="text-[12px] text-slate-500">Tenant, login aur saare leads permanently delete ho jayenge.</p>
+                                    </div>
+                                    <button onClick={() => deleteClient(c.id, c.name)}
+                                      className="border border-red-300 text-red-600 hover:bg-red-50 text-[13px] font-medium px-4 py-2 rounded-lg transition shrink-0">
+                                      Delete Client (permanent)</button>
                                   </div>
                                 </div>
                               )}
