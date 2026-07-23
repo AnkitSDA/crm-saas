@@ -24,6 +24,11 @@ const SOURCES = [
 ];
 const STATUSES = ["new", "contacted", "qualified", "won", "lost"];
 
+const SRC_COLOR: Record<string, string> = {
+  google_ads: "#059669", meta_ads: "#2563eb", website: "#64748b", manual: "#d97706",
+};
+const srcColor = (s: string) => SRC_COLOR[s] || "#94a3b8";
+
 const inr = (n: number) => "₹" + Math.round(n || 0).toLocaleString("en-IN");
 const roasTxt = (r: number | null) => (r == null ? "—" : r.toFixed(1) + "x");
 
@@ -42,6 +47,11 @@ const ic = {
   mail:     <><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></>,
   card:     <><rect x="1" y="4" width="22" height="16" rx="2" /><path d="M1 10h22" /></>,
   settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></>,
+  link:     <><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></>,
+  shield:   <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></>,
+  palette:  <><circle cx="13.5" cy="6.5" r=".5" /><circle cx="17.5" cy="10.5" r=".5" /><circle cx="8.5" cy="7.5" r=".5" /><circle cx="6.5" cy="12.5" r=".5" /><path d="M12 2a10 10 0 1 0 0 20 2 2 0 0 0 0-4 6 6 0 0 1 0-12 4 4 0 0 0 4-4 10 10 0 0 0-4 0z" /></>,
+  user:     <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>,
+  alert:    <><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></>,
 };
 function Icon({ d, size = 15, className = "" }: { d: React.ReactNode; size?: number; className?: string }) {
   return (
@@ -408,159 +418,225 @@ export default function AgencyDashboard() {
 
                               {tab === "manage" && (
                                 <div className="space-y-4">
-                                  {/* Login + Integration side by side */}
-                                  <div className="grid md:grid-cols-2 gap-4 items-start">
-                                    {/* login */}
-                                    <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
-                                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Login &amp; access</div>
-                                      <div className="bg-slate-50 rounded-lg border border-slate-200 px-3 py-2">
-                                        <div className="text-[11px] text-slate-400">Login email</div>
-                                        <div className="text-sm text-slate-700 truncate">{detail.login_email || "—"}</div>
+                                  {/* Client header strip */}
+                                  <div className="rounded-xl bg-gradient-to-r from-[#1b2431] to-[#2b3a4f] px-4 py-3 flex flex-wrap items-center gap-3">
+                                    <div className="w-10 h-10 rounded-lg bg-white/10 border border-white/15 flex items-center justify-center shrink-0 overflow-hidden">
+                                      {eLogo
+                                        ? <img src={eLogo} alt="" className="w-full h-full object-cover" onError={(ev:any)=>{ev.target.style.display='none';}} />
+                                        : <span className="text-[12px] font-semibold text-slate-200">{(c.name || "?").slice(0,2).toUpperCase()}</span>}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="text-[14px] font-semibold text-white truncate">{eBrand || c.name}</div>
+                                      <div className="text-[11px] text-slate-400 truncate">{detail.login_email || "no login"}</div>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-2 ml-auto">
+                                      <span className={"text-[11px] font-medium px-2.5 py-1 rounded-full " + (detail.paid_this_month ? "bg-emerald-400/15 text-emerald-300 border border-emerald-400/25" : "bg-rose-400/15 text-rose-300 border border-rose-400/25")}>
+                                        {detail.paid_this_month ? "✓ paid" : "unpaid"} · {detail.current_period}
+                                      </span>
+                                      <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-white/10 text-slate-200 border border-white/15">{detail.access_mode}</span>
+                                      <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-white/10 text-slate-200 border border-white/15">{inr(parseFloat(eRate) || 0)}/mo</span>
+                                    </div>
+                                  </div>
+
+                                  {/* Login (1 col) + Integration (2 cols) */}
+                                  <div className="grid lg:grid-cols-3 gap-4 items-start">
+                                    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                                      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
+                                        <span className="w-6 h-6 rounded-md bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0"><Icon d={ic.user} size={13} /></span>
+                                        <span className="text-[13px] font-semibold text-slate-700">Login</span>
                                       </div>
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <button onClick={() => resetPw(c.id)}
-                                          className="border border-amber-300 text-amber-700 hover:bg-amber-50 text-[13px] font-medium px-4 py-2 rounded-lg transition">Reset Password</button>
-                                        <span className={"inline-flex items-center text-[11px] font-medium px-2.5 py-1 rounded-full " + (detail.paid_this_month ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-600 border border-rose-200")}>
-                                          {detail.paid_this_month ? "✓ paid this month" : "unpaid this month"}
-                                        </span>
-                                        <span className="inline-flex items-center text-[11px] font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                                          {detail.access_mode}
-                                        </span>
-                                      </div>
-                                      {savedPw && (
-                                        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                                          <div className="text-[11px] text-amber-600">New password (save it!)</div>
-                                          <div className="flex gap-2 items-center">
-                                            <code className="text-sm text-amber-800 flex-1 break-all">{savedPw}</code>
-                                            <button onClick={() => copy(savedPw, "Password")} className="text-[11px] text-indigo-600 hover:underline shrink-0">Copy</button>
-                                          </div>
+                                      <div className="p-4 space-y-3">
+                                        <div>
+                                          <div className="text-[11px] text-slate-400 mb-1">Email</div>
+                                          <div className="text-[13px] text-slate-700 break-all bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">{detail.login_email || "—"}</div>
                                         </div>
-                                      )}
+                                        <button onClick={() => resetPw(c.id)}
+                                          className="w-full border border-amber-300 text-amber-700 hover:bg-amber-50 text-[13px] font-medium px-4 py-2 rounded-lg transition">Reset Password</button>
+                                        {savedPw ? (
+                                          <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                                            <div className="text-[11px] text-amber-600">New password — save it</div>
+                                            <div className="flex gap-2 items-center">
+                                              <code className="text-[13px] text-amber-800 flex-1 break-all">{savedPw}</code>
+                                              <button onClick={() => copy(savedPw, "Password")} className="text-slate-400 hover:text-indigo-600 shrink-0"><Icon d={ic.copy} size={13} /></button>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <p className="text-[11px] text-slate-400">Reset karne par naya password yahin dikhega — client ko bhej dena.</p>
+                                        )}
+                                      </div>
                                     </div>
 
-                                    {/* integration */}
-                                    <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
-                                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Integration</div>
-                                      <div>
-                                        <div className="text-[11px] text-slate-400 mb-1">API key</div>
-                                        <div className="flex gap-2 items-center bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5">
-                                          <code className="text-[11px] truncate flex-1 text-slate-600">{detail.api_key}</code>
-                                          <button onClick={() => copy(detail.api_key, "API key")} className="text-slate-400 hover:text-indigo-600 shrink-0"><Icon d={ic.copy} size={13} /></button>
-                                        </div>
+                                    <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 overflow-hidden">
+                                      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
+                                        <span className="w-6 h-6 rounded-md bg-sky-50 text-sky-600 flex items-center justify-center shrink-0"><Icon d={ic.link} size={13} /></span>
+                                        <span className="text-[13px] font-semibold text-slate-700">Integration</span>
+                                        <span className="ml-auto text-[11px] text-slate-400">{c.leads} leads captured</span>
                                       </div>
-                                      <div>
-                                        <div className="text-[11px] text-slate-400 mb-1">Webhook URL</div>
-                                        <div className="flex gap-2 items-center bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5">
-                                          <code className="text-[11px] truncate flex-1 text-slate-600">{webhookUrl}</code>
-                                          <button onClick={() => copy(webhookUrl, "Webhook")} className="text-slate-400 hover:text-indigo-600 shrink-0"><Icon d={ic.copy} size={13} /></button>
-                                        </div>
-                                      </div>
-                                      <div>
-                                        <div className="text-[11px] text-slate-400 mb-1.5">Sources breakdown</div>
-                                        {detail.sources.length === 0 ? (
-                                          <p className="text-[12px] text-slate-400">No leads yet.</p>
-                                        ) : (
-                                          <div className="grid grid-cols-3 gap-2">
-                                            {detail.sources.map((s: any) => (
-                                              <div key={s.source} className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2">
-                                                <div className="text-[10px] uppercase tracking-wide text-slate-400 capitalize truncate">{s.source.replace("_", " ")}</div>
-                                                <div className="text-[15px] font-semibold text-slate-800 tabular-nums leading-tight">{s.leads}</div>
-                                                <div className="text-[10px] text-emerald-700">{s.won} won</div>
-                                              </div>
-                                            ))}
+                                      <div className="p-4 space-y-3">
+                                        <div className="grid md:grid-cols-2 gap-3">
+                                          <div>
+                                            <div className="text-[11px] text-slate-400 mb-1">API key</div>
+                                            <div className="flex gap-2 items-center bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2">
+                                              <code className="text-[11px] truncate flex-1 text-slate-600">{detail.api_key}</code>
+                                              <button onClick={() => copy(detail.api_key, "API key")} className="text-slate-400 hover:text-indigo-600 shrink-0"><Icon d={ic.copy} size={13} /></button>
+                                            </div>
                                           </div>
-                                        )}
+                                          <div>
+                                            <div className="text-[11px] text-slate-400 mb-1">Webhook URL</div>
+                                            <div className="flex gap-2 items-center bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2">
+                                              <code className="text-[11px] truncate flex-1 text-slate-600">{webhookUrl}</code>
+                                              <button onClick={() => copy(webhookUrl, "Webhook")} className="text-slate-400 hover:text-indigo-600 shrink-0"><Icon d={ic.copy} size={13} /></button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <div className="text-[11px] text-slate-400 mb-1.5">Lead sources</div>
+                                          {detail.sources.length === 0 ? (
+                                            <p className="text-[12px] text-slate-400">Abhi koi lead nahi aayi.</p>
+                                          ) : (
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                              {detail.sources.map((s: any) => (
+                                                <div key={s.source} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 border-l-[3px]" style={{ borderLeftColor: srcColor(s.source) }}>
+                                                  <div className="text-[10px] uppercase tracking-wide text-slate-400 capitalize truncate">{s.source.replace("_", " ")}</div>
+                                                  <div className="text-[17px] font-semibold text-slate-800 tabular-nums leading-tight">{s.leads}</div>
+                                                  <div className="text-[10px] text-emerald-700">{s.won} won</div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
                                       </div>
                                     </div>
                                   </div>
 
-                                  {/* Settings — full width */}
-                                  <div className="bg-white rounded-xl border border-slate-200">
-                                    <div className="px-4 py-2.5 border-b border-slate-100 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Settings</div>
-                                    <div className="p-4 space-y-4">
-                                      <div className="grid md:grid-cols-3 gap-4">
-                                        <div className="space-y-3">
-                                          <div>
-                                            <label className="text-[11px] text-slate-400">Monthly rate (₹)</label>
-                                            <input className={inputCls} type="number" value={eRate} onChange={(e) => setERate(e.target.value)} />
-                                          </div>
-                                          <div>
-                                            <label className="text-[11px] text-slate-400">Plan</label>
-                                            <input className={inputCls} value={ePlan} onChange={(e) => setEPlan(e.target.value)} placeholder="active / basic / pro" />
-                                          </div>
+                                  {/* Settings */}
+                                  <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                                    <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
+                                      <span className="w-6 h-6 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center shrink-0"><Icon d={ic.settings} size={13} /></span>
+                                      <span className="text-[13px] font-semibold text-slate-700">Plan &amp; access</span>
+                                    </div>
+                                    <div className="p-4 grid lg:grid-cols-3 gap-5">
+                                      <div className="space-y-3">
+                                        <div>
+                                          <label className="text-[11px] text-slate-400">Monthly rate (₹)</label>
+                                          <input className={inputCls} type="number" value={eRate} onChange={(e) => setERate(e.target.value)} />
                                         </div>
                                         <div>
-                                          <label className="text-[11px] text-slate-400">Access mode</label>
-                                          <div className="grid grid-cols-2 gap-2 mt-1">
-                                            {[
-                                              {k:"active",label:"🟢 Active",d:"leads + login ON"},
-                                              {k:"block_all",label:"🔴 Block all",d:"leads + login OFF"},
-                                              {k:"block_leads",label:"📥 Block leads",d:"login ON, no new leads"},
-                                              {k:"block_login",label:"🔒 Block login",d:"leads ON, no access"},
-                                            ].map((m)=>(
-                                              <button key={m.k} onClick={()=>setEMode(m.k)} title={m.d}
-                                                className={"text-[11px] px-2 py-2 rounded-lg border text-left transition " +
-                                                  (eMode===m.k ? "bg-indigo-50 border-indigo-300 text-indigo-700 font-medium" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300")}>
-                                                <div>{m.label}</div><div className="text-[10px] text-slate-400">{m.d}</div>
-                                              </button>
-                                            ))}
-                                          </div>
-                                        </div>
-                                        <div>
-                                          <label className="text-[11px] text-slate-400">Sources on/off</label>
-                                          <div className="flex flex-wrap gap-2 mt-1">
-                                            {SOURCES.map((s) => (
-                                              <button key={s.key} onClick={() => toggleSource(s.key)}
-                                                className={"text-[11px] px-3 py-1.5 rounded-lg border transition " +
-                                                  (eSources.includes(s.key) ? "bg-indigo-50 border-indigo-300 text-indigo-700 font-medium" : "bg-white border-slate-200 text-slate-400 hover:border-slate-300")}>
-                                                {eSources.includes(s.key) ? "✓ " : ""}{s.label}</button>
-                                            ))}
-                                          </div>
-                                          <p className="text-[10px] text-slate-400 mt-2">Jo source off hai, client ko uska tab nahi dikhega.</p>
+                                          <label className="text-[11px] text-slate-400">Plan</label>
+                                          <input className={inputCls} value={ePlan} onChange={(e) => setEPlan(e.target.value)} placeholder="active / basic / pro" />
                                         </div>
                                       </div>
+                                      <div>
+                                        <label className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                                          <Icon d={ic.shield} size={12} className="text-slate-400" />Access mode
+                                        </label>
+                                        <div className="grid grid-cols-2 gap-2 mt-1.5">
+                                          {[
+                                            {k:"active",label:"Active",d:"leads + login ON",dot:"#059669"},
+                                            {k:"block_all",label:"Block all",d:"leads + login OFF",dot:"#dc2626"},
+                                            {k:"block_leads",label:"Block leads",d:"login ON, no leads",dot:"#d97706"},
+                                            {k:"block_login",label:"Block login",d:"leads ON, no access",dot:"#7c3aed"},
+                                          ].map((m)=>(
+                                            <button key={m.k} onClick={()=>setEMode(m.k)} title={m.d}
+                                              className={"text-left px-2.5 py-2 rounded-lg border transition " +
+                                                (eMode===m.k ? "bg-indigo-50 border-indigo-300 ring-1 ring-indigo-200" : "bg-white border-slate-200 hover:border-slate-300")}>
+                                              <div className="flex items-center gap-1.5">
+                                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: m.dot }} />
+                                                <span className={"text-[11px] font-medium " + (eMode===m.k ? "text-indigo-700" : "text-slate-600")}>{m.label}</span>
+                                              </div>
+                                              <div className="text-[10px] text-slate-400 mt-0.5">{m.d}</div>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <label className="text-[11px] text-slate-400">Sources on/off</label>
+                                        <div className="flex flex-col gap-2 mt-1.5">
+                                          {SOURCES.map((s) => {
+                                            const on = eSources.includes(s.key);
+                                            return (
+                                              <button key={s.key} onClick={() => toggleSource(s.key)}
+                                                className={"flex items-center gap-2 px-3 py-2 rounded-lg border text-[12px] transition " +
+                                                  (on ? "bg-white border-slate-300 text-slate-700" : "bg-slate-50 border-slate-200 text-slate-400")}>
+                                                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: on ? srcColor(s.key) : "#cbd5e1" }} />
+                                                <span className="font-medium">{s.label}</span>
+                                                <span className={"ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded " + (on ? "bg-emerald-50 text-emerald-700" : "bg-slate-200 text-slate-500")}>{on ? "ON" : "OFF"}</span>
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 mt-2">Off source ka tab client ko nahi dikhega.</p>
+                                      </div>
+                                    </div>
+                                  </div>
 
-                                      <div className="pt-4 border-t border-slate-100">
-                                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2">Branding (white-label)</div>
-                                        <div className="grid md:grid-cols-3 gap-3">
+                                  {/* Branding */}
+                                  <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                                    <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
+                                      <span className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ background: eColor + "1a", color: eColor }}><Icon d={ic.palette} size={13} /></span>
+                                      <span className="text-[13px] font-semibold text-slate-700">Branding (white-label)</span>
+                                    </div>
+                                    <div className="p-4 grid lg:grid-cols-3 gap-4">
+                                      <div className="lg:col-span-2 space-y-3">
+                                        <div className="grid md:grid-cols-2 gap-3">
                                           <div>
                                             <label className="text-[11px] text-slate-400">Display name</label>
                                             <input className={inputCls} value={eBrand} onChange={(e) => setEBrand(e.target.value)} placeholder="Client brand name" />
                                           </div>
                                           <div>
-                                            <label className="text-[11px] text-slate-400">Logo URL</label>
-                                            <input className={inputCls} value={eLogo} onChange={(e) => setELogo(e.target.value)} placeholder="https://...logo.png" />
-                                          </div>
-                                          <div>
                                             <label className="text-[11px] text-slate-400">Accent color</label>
                                             <div className="flex items-center gap-2 mt-1">
-                                              <input type="color" value={eColor} onChange={(e) => setEColor(e.target.value)} className="h-9 w-12 border border-slate-300 rounded cursor-pointer shrink-0" />
-                                              <input className="border border-slate-300 rounded-lg px-2 py-2 text-xs w-24" value={eColor} onChange={(e) => setEColor(e.target.value)} />
-                                              {eLogo ? <img src={eLogo} alt="" className="h-9 ml-auto rounded" onError={(ev:any)=>{ev.target.style.display='none';}} /> : null}
+                                              <input type="color" value={eColor} onChange={(e) => setEColor(e.target.value)} className="h-9 w-11 border border-slate-300 rounded cursor-pointer shrink-0" />
+                                              <input className="border border-slate-300 rounded-lg px-2 py-2 text-xs flex-1" value={eColor} onChange={(e) => setEColor(e.target.value)} />
                                             </div>
                                           </div>
                                         </div>
+                                        <div>
+                                          <label className="text-[11px] text-slate-400">Logo URL</label>
+                                          <input className={inputCls} value={eLogo} onChange={(e) => setELogo(e.target.value)} placeholder="https://...logo.png" />
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <div className="text-[11px] text-slate-400 mb-1">Client ko aisa dikhega</div>
+                                        <div className="rounded-lg bg-[#1b2431] p-3">
+                                          <div className="flex items-center gap-2.5 pb-2.5 border-b border-white/10">
+                                            {eLogo
+                                              ? <img src={eLogo} alt="" className="h-7 w-7 rounded object-cover shrink-0" onError={(ev:any)=>{ev.target.style.display='none';}} />
+                                              : <span className="h-7 w-7 rounded bg-white/10 shrink-0" />}
+                                            <span className="text-[13px] font-semibold text-white truncate">{eBrand || c.name}</span>
+                                          </div>
+                                          <div className="pt-2 space-y-1">
+                                            <div className="flex items-center gap-2 px-2 py-1.5 rounded bg-white/10 border-l-2" style={{ borderColor: eColor }}>
+                                              <span className="text-[11px] text-white">Dashboard</span>
+                                            </div>
+                                            <div className="px-2 py-1.5 text-[11px] text-slate-400">Leads</div>
+                                          </div>
+                                          <p className="text-[9px] text-slate-500 pt-2">Powered by Brandbanalo</p>
+                                        </div>
                                       </div>
                                     </div>
-                                    <div className="px-4 py-3 border-t border-slate-100 flex justify-end">
+                                    <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/60 flex flex-wrap items-center justify-between gap-2">
+                                      <span className="text-[11px] text-slate-400">Settings, access mode, sources aur branding — sab ek saath save hote hain.</span>
                                       <button onClick={() => saveSettings(c.id)}
-                                        className="bg-indigo-600 hover:bg-indigo-500 text-white text-[13px] font-medium px-5 py-2 rounded-lg transition">Save Settings</button>
+                                        className="bg-indigo-600 hover:bg-indigo-500 text-white text-[13px] font-medium px-5 py-2 rounded-lg transition shrink-0">Save Settings</button>
                                     </div>
                                   </div>
 
-                                  {/* Danger zone — slim strip */}
-                                  <div className="bg-white rounded-xl border border-red-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-                                    <div>
-                                      <div className="text-[11px] font-semibold text-red-500 uppercase tracking-wide">Danger zone</div>
-                                      <p className="text-[12px] text-slate-500">Tenant, login aur saare leads permanently delete ho jayenge.</p>
+                                  {/* Danger zone */}
+                                  <div className="rounded-xl border border-red-200 bg-red-50/50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                                    <div className="flex items-start gap-2.5">
+                                      <span className="w-6 h-6 rounded-md bg-red-100 text-red-600 flex items-center justify-center shrink-0 mt-0.5"><Icon d={ic.alert} size={13} /></span>
+                                      <div>
+                                        <div className="text-[12px] font-semibold text-red-700">Danger zone</div>
+                                        <p className="text-[11px] text-slate-500">Tenant, login aur saare {c.leads} leads permanently delete ho jayenge.</p>
+                                      </div>
                                     </div>
                                     <button onClick={() => deleteClient(c.id, c.name)}
-                                      className="border border-red-300 text-red-600 hover:bg-red-50 text-[13px] font-medium px-4 py-2 rounded-lg transition shrink-0">
-                                      Delete Client (permanent)</button>
+                                      className="border border-red-300 bg-white text-red-600 hover:bg-red-50 text-[13px] font-medium px-4 py-2 rounded-lg transition shrink-0">
+                                      Delete Client</button>
                                   </div>
                                 </div>
                               )}
-
                               {tab === "leads" && (
                                 <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                                   <table className="w-full text-[13px]">
