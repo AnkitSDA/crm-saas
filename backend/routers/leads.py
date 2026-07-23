@@ -91,10 +91,23 @@ def create_lead(data: LeadCreate, tenant_id: str = Depends(get_current_tenant), 
 
 
 @router.get("/stats/sources")
-def source_breakdown(tenant_id: str = Depends(get_current_tenant), db: Session = Depends(get_db), days: int = Query(30, ge=1, le=365)):
-    cutoff = datetime.utcnow() - timedelta(days=days)
-    rows = (db.query(Lead.source, func.count(Lead.id)).filter(Lead.tenant_id == tenant_id, Lead.created_at >= cutoff)
-            .group_by(Lead.source).order_by(func.count(Lead.id).desc()).all())
+def source_breakdown(
+    tenant_id: str           = Depends(get_current_tenant),
+    db:        Session       = Depends(get_db),
+    days:      Optional[int] = Query(None, ge=1, le=3650),
+    start:     Optional[str] = Query(None),   # naive local ISO
+    end:       Optional[str] = Query(None),   # exclusive upper bound
+):
+    q = db.query(Lead.source, func.count(Lead.id)).filter(Lead.tenant_id == tenant_id)
+    if days:
+        q = q.filter(Lead.created_at >= datetime.utcnow() - timedelta(days=days))
+    if start:
+        try:    q = q.filter(Lead.created_at >= datetime.fromisoformat(start))
+        except Exception: pass
+    if end:
+        try:    q = q.filter(Lead.created_at < datetime.fromisoformat(end))
+        except Exception: pass
+    rows = q.group_by(Lead.source).order_by(func.count(Lead.id).desc()).all()
     return [{"source": s or "unknown", "count": c} for s, c in rows]
 
 

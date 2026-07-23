@@ -220,7 +220,7 @@ export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [total, setTotal] = useState(0);
   const [sourceCounts, setSourceCounts] = useState<Record<string, number>>({});
-  const [allTimeTotal, setAllTimeTotal] = useState(0);
+  const [rangeTotal, setRangeTotal] = useState(0);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [showReminders, setShowReminders] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -258,7 +258,6 @@ export default function LeadsPage() {
     if (localStorage.getItem("role") === "super_admin") { router.push("/agency"); return; }
     fetchTenant();
     fetchLeads();
-    fetchSourceCounts();
     fetchReminders();
   }, []);
 
@@ -266,6 +265,9 @@ export default function LeadsPage() {
     const id = setTimeout(fetchLeads, search ? 350 : 0);
     return () => clearTimeout(id);
   }, [search, statusFilter, sourceFilter, range]);
+
+  // Tab counts depend only on the date range
+  useEffect(() => { fetchSourceCounts(); }, [range]);
 
   async function fetchTenant() {
     try {
@@ -312,7 +314,10 @@ export default function LeadsPage() {
 
   async function fetchSourceCounts() {
     try {
-      const res = await api.get("/leads/stats/sources?days=365");
+      // Tab counts follow the selected date range, same as the table below
+      const res = await api.get("/leads/stats/sources", {
+        params: { start: toNaiveIso(range.start), end: toNaiveIso(range.end) },
+      });
       const counts: Record<string, number> = {};
       let totalCount = 0;
       (res.data as Array<{ source: string; count: number }>).forEach((row) => {
@@ -320,7 +325,7 @@ export default function LeadsPage() {
         totalCount += row.count;
       });
       setSourceCounts(counts);
-      setAllTimeTotal(totalCount);
+      setRangeTotal(totalCount);
     } catch {}
   }
 
@@ -469,7 +474,7 @@ export default function LeadsPage() {
   }
 
   function getTabCount(tabId: string) {
-    if (tabId === "") return allTimeTotal;
+    if (tabId === "") return rangeTotal;
     return sourceCounts[tabId] || 0;
   }
 
