@@ -57,7 +57,9 @@ def get_leads(
     search:    Optional[str]     = Query(None),
     campaign:  Optional[str]     = Query(None),
     days:      Optional[int]     = Query(None, ge=1, le=365),
-    limit:     int               = Query(100, ge=1, le=500),
+    start:     Optional[str]     = Query(None),   # naive local ISO, e.g. 2026-06-01T00:00:00
+    end:       Optional[str]     = Query(None),   # exclusive upper bound
+    limit:     int               = Query(100, ge=1, le=5000),
     offset:    int               = Query(0,  ge=0),
 ):
     q = db.query(Lead).filter(Lead.tenant_id == tenant_id)
@@ -65,6 +67,13 @@ def get_leads(
     if source:   q = q.filter(Lead.source == source)
     if campaign: q = q.filter(Lead.utm_campaign == campaign)
     if days:     q = q.filter(Lead.created_at >= datetime.utcnow() - timedelta(days=days))
+    # Date range filter runs in SQL so older months work no matter how many leads exist
+    if start:
+        try:    q = q.filter(Lead.created_at >= datetime.fromisoformat(start))
+        except Exception: pass
+    if end:
+        try:    q = q.filter(Lead.created_at < datetime.fromisoformat(end))
+        except Exception: pass
     if search:
         like = f"%{search}%"
         q = q.filter(or_(Lead.name.ilike(like), Lead.phone.ilike(like), Lead.email.ilike(like)))

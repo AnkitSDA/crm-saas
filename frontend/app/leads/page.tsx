@@ -265,7 +265,7 @@ export default function LeadsPage() {
   useEffect(() => {
     const id = setTimeout(fetchLeads, search ? 350 : 0);
     return () => clearTimeout(id);
-  }, [search, statusFilter, sourceFilter]);
+  }, [search, statusFilter, sourceFilter, range]);
 
   async function fetchTenant() {
     try {
@@ -282,9 +282,21 @@ export default function LeadsPage() {
     }
   }
 
+  // Format a Date as naive local ISO (no timezone) so it matches how
+  // created_at is stored/compared. App is single-timezone (India).
+  function toNaiveIso(d: Date): string {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
   async function fetchLeads() {
     try {
-      const params: Record<string, string> = {};
+      // Date range goes to the server, so any month works regardless of total lead count.
+      const params: Record<string, string> = {
+        limit: "5000",
+        start: toNaiveIso(range.start),
+        end: toNaiveIso(range.end),
+      };
       if (search) params.search = search;
       if (statusFilter) params.status = statusFilter;
       if (sourceFilter) params.source = sourceFilter;
