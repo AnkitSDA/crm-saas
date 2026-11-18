@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from jose import jwt
@@ -8,6 +8,7 @@ from database import get_db
 from models import User, Tenant, gen_api_key
 from deps import get_current_user
 import os, uuid
+from urllib.parse import urlparse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 pwd    = CryptContext(schemes=["bcrypt"])
@@ -30,6 +31,50 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email:    str
     password: str
+
+
+# ---------- Domain based login separation ----------
+# Render env (all optional; if not set, login works exactly as before):
+#   AGENCY_HOSTS    = agency.brandbanalo.com
+#   TENANT_DOMAINS  = raviart.brandbanalo.com=<tenant slug or id>,other.brandbanalo.com=<slug or id>
+def _csv_env(name: str) -> list[str]:
+    return [x.strip().lower() for x in os.getenv(name, "").split(",") if x.strip()]
+
+AGENCY_HOSTS = set(_csv_env("AGENCY_HOSTS"))
+TENANT_DOMAINS: dict[str, str] = {}
+for _pair in _csv_env("TENANT_DOMAINS"):
+    if "=" in _pair:
+        _host, _val = _pair.split("=", 1)
+        TENANT_DOMAINS[_host.strip()] = _val.strip()
+
+
+def _request_host(request: Request) -> str:
+    origin = request.headers.get("origin") or request.headers.get("referer") or ""
+    try:
+        return (urlparse(origin).hostname or "").lower()
+    except Exception:
+        return ""
+
+
+def _enforce_domain(request: Request, user: User, db: Session) -> None:
+    host = _request_host(request)
+    if not host:
+        return
+
+    # agency domain: only super_admin may log in
+    if host in AGENCY_HOSTS:
+        if user.role != "super_admin":
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        return
+
+    # client domain: only users of that tenant may log in (agency login denied too)
+    if host in TENANT_DOMAINS:
+        if user.role == "super_admin" or not user.tenant_id:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+        wanted = TENANT_DOMAINS[host]
+        if not tenant or wanted not in (str(tenant.id).lower(), str(tenant.slug).lower()):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
 
 def make_token(user: User) -> str:
     payload = {
@@ -80,10 +125,12 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
     }
 
 @router.post("/login")
-def login(data: LoginRequest, db: Session = Depends(get_db)):
+def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == data.email).first()
     if not user or not pwd.verify(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    _enforce_domain(request, user, db)
 
     # Suspended account check (agency super_admin always allowed)
     if user.role != "super_admin" and user.tenant_id:
