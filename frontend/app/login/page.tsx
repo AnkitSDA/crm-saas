@@ -50,7 +50,11 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="relative">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brandbanalo-logo.png" alt="Brandbanalo" className="h-14 w-auto" />
+          <img
+            src="/brandbanalo-logo-white.webp"
+            alt="Brandbanalo"
+            className="h-14 w-auto"
+          />
         </div>
 
         <div className="relative space-y-8">
@@ -93,12 +97,11 @@ export default function LoginPage() {
           {/* Mobile logo */}
           <div className="lg:hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            // abhi
-<img
-    src="/brandbanalo-logo-black.webp"
-    alt="Brandbanalo"
-    className="h-12 w-auto"
-  />
+            <img
+              src="/brandbanalo-logo-black.webp"
+              alt="Brandbanalo"
+              className="h-12 w-auto"
+            />
           </div>
 
           <div className="space-y-1.5">
