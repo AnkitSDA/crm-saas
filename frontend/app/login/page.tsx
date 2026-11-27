@@ -28,7 +28,6 @@ export default function LoginPage() {
       localStorage.setItem("token", res.data.token);
       localStorage.setItem("role", res.data.role);
       toast.success("Login successful!");
-      // Agency owner -> agency dashboard; clients -> their dashboard
       if (res.data.role === "super_admin") {
         router.push("/agency");
       } else {
@@ -44,15 +43,14 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-background">
       {/* Brand panel (hidden on mobile) */}
-      <div className="relative hidden lg:flex flex-col justify-between overflow-hidden bg-brand-gradient p-12 text-white">
-        <div className="pointer-events-none absolute -top-24 -right-24 h-96 w-96 rounded-full bg-white/10 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-32 -left-16 h-96 w-96 rounded-full bg-white/10 blur-3xl" />
+      <div className="relative hidden lg:flex flex-col justify-between overflow-hidden bg-brand-black p-12 text-white">
+        <div className="pointer-events-none absolute -top-24 -right-24 h-96 w-96 rounded-full bg-primary/25 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-32 -left-16 h-96 w-96 rounded-full bg-primary/15 blur-3xl" />
 
-        <div className="relative flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 backdrop-blur">
-            <Zap className="h-5 w-5" />
-          </div>
-          <span className="text-lg font-semibold tracking-tight">Lead CRM</span>
+        {/* Logo */}
+        <div className="relative">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brandbanalo-logo.png" alt="Brandbanalo" className="h-14 w-auto" />
         </div>
 
         <div className="relative space-y-8">
@@ -60,38 +58,47 @@ export default function LoginPage() {
             <h2 className="text-4xl font-semibold leading-tight tracking-tight">
               Every lead,
               <br />
-              one clear view.
+              <span className="text-primary">one clear view.</span>
             </h2>
-            <p className="max-w-sm text-white/75">
+            <p className="max-w-sm text-white/70">
               Capture, track and convert your enquiries without the spreadsheet chaos.
             </p>
           </div>
           <ul className="space-y-5">
             {features.map(({ icon: Icon, title, text }) => (
               <li key={title} className="flex gap-4">
-                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/15">
+                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary ring-1 ring-primary/30">
                   <Icon className="h-4 w-4" />
                 </div>
                 <div>
                   <p className="font-medium">{title}</p>
-                  <p className="text-sm text-white/70">{text}</p>
+                  <p className="text-sm text-white/65">{text}</p>
                 </div>
               </li>
             ))}
           </ul>
         </div>
 
-        <p className="relative text-xs text-white/60">Secure login. Your data stays private to your account.</p>
+        <div className="relative space-y-3">
+          <div className="h-1 w-16 rounded-full bg-primary" />
+          <p className="text-xs text-white/55">
+            Branding Today, Brand Tomorrow &middot; Secure login. Your data stays private to your account.
+          </p>
+        </div>
       </div>
 
       {/* Form panel */}
       <div className="flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm space-y-8">
-          <div className="flex items-center gap-2.5 lg:hidden">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-gradient text-white">
-              <Zap className="h-4 w-4" />
-            </div>
-            <span className="font-semibold tracking-tight">Lead CRM</span>
+          {/* Mobile logo */}
+          <div className="lg:hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            // abhi
+<img
+    src="/brandbanalo-logo-black.webp"
+    alt="Brandbanalo"
+    className="h-12 w-auto"
+  />
           </div>
 
           <div className="space-y-1.5">
@@ -142,7 +149,7 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <Button type="submit" className="h-11 w-full text-sm font-medium shadow-soft" disabled={loading}>
+            <Button type="submit" className="h-11 w-full text-sm font-semibold shadow-soft" disabled={loading}>
               {loading ? "Logging in..." : "Login"}
             </Button>
           </form>
